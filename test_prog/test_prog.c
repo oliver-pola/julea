@@ -37,7 +37,18 @@ int main(int argc, char** argv)
     // Do the write
     j_object_write(object, data_block, 10, 0, &bytes_written, write_batch);
     j_batch_execute(write_batch);
-    printf("Number of bytes written to object: %d\n", bytes_written);
+    printf("Number of bytes written to object: %ld\n", bytes_written);
+
+    g_autoptr(JBatch) status_batch = NULL;
+    status_batch = j_batch_new(semantics);
+
+    gint64 mod_time = 0;
+    guint64 size = 0;
+
+    j_object_status(object, &mod_time, &size, status_batch);
+    j_batch_execute(status_batch);
+
+    printf("Object Status:\n Modification time: %ld\n Size: %ld\n", mod_time, size);
 
     // Read from the object byte per byte and print the read data
     guint64 bytes_read = 0;
@@ -51,7 +62,7 @@ int main(int argc, char** argv)
         j_object_read(object, &buff[i], 1, i, &bytes_read, read_batch);
         j_batch_execute(read_batch);
 
-        printf("Read #%d, value: %c, bytes read: %d\n", i, buff[i], bytes_read);
+        printf("Read #%d, value: %c, bytes read: %ld\n", i, buff[i], bytes_read);
     }
 
 
