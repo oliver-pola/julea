@@ -101,6 +101,11 @@ struct JObject
 	 * The reference count.
 	 **/
 	gint ref_count;
+
+    /**
+     * The Transformation
+     **/
+    JTransformation* transformation;
 };
 
 static
@@ -787,6 +792,7 @@ j_object_new (gchar const* namespace, gchar const* name)
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
+    object->transformation = NULL;
 
 	j_trace_leave(G_STRFUNC);
 

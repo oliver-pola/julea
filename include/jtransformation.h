@@ -20,36 +20,28 @@
  * \file
  **/
 
-#ifndef JULEA_H
-#define JULEA_H
+#ifndef JULEA_TRANSFORMATION_H
+#define JULEA_TRANSFORMATION_H
 
-/**
- * \mainpage
- *
- * JULEA is a distributed file system with a newly designed application programming interface.
- * It also allows to change the file system semantics at runtime.
- *
- * The name JULEA is a play on ROMIO.
- **/
+#if !defined(JULEA_H) && !defined(JULEA_COMPILATION)
+#error "Only <julea.h> can be included directly."
+#endif
 
-#include <jbackend.h>
-#include <jbackground-operation.h>
-#include <jbatch.h>
-#include <jcache.h>
-#include <jcommon.h>
-#include <jconfiguration.h>
-#include <jconnection-pool.h>
-#include <jcredentials.h>
-#include <jdistribution.h>
-#include <jhelper.h>
-#include <jlist.h>
-#include <jlist-iterator.h>
-#include <jlock.h>
-#include <jmemory-chunk.h>
-#include <jmessage.h>
-#include <joperation.h>
-#include <jsemantics.h>
-#include <jstatistics.h>
-#include <jtransformation.h>
+#include <glib.h>
+
+G_BEGIN_DECLS
+
+enum JTransformationType
+{
+    J_TRANSFORMATION_TYPE_DEFAULT
+};
+
+typedef enum JTransformationType JTransformationType;
+
+struct JTransformation;
+
+typedef struct JTransformation JTransformation;
+
+G_END_DECLS
 
 #endif
