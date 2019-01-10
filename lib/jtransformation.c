@@ -36,7 +36,20 @@
  **/
 struct JTransformation
 {
+    /**
+	 * Which transformation to apply.
+	 **/
     JTransformationType type;
+
+    /**
+	 * Whether the transformation changes data size.
+	 **/
+	gboolean changes_size;
+
+    /**
+	 * Whether parts of data can be edited without considering the neighbourhood.
+	 **/
+	gboolean partial_edit;
 };
 
 /**
