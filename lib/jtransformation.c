@@ -69,6 +69,7 @@ JTransformation* j_transformation_new (JTransformationType type, void* params)
     trafo = g_slice_new(JTransformation);
 
     trafo->type = type;
+    trafo->ref_count = 1;
 
     switch (type)
     {
