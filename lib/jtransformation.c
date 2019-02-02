@@ -42,6 +42,11 @@ struct JTransformation
     JTransformationType type;
 
     /**
+	 * Whether client or server applies transformation.
+	 **/
+    JTransformationMode mode;
+
+    /**
 	 * Whether the transformation changes data size.
 	 **/
 	gboolean changes_size;
@@ -57,10 +62,29 @@ struct JTransformation
 	gint ref_count;
 };
 
+static void j_transformation_apply_xor (gpointer data, guint64 length, guint64 offset)
+{
+    unsigned char* d = data;
+    d += offset;
+    while(length)
+    {
+        *d = *d ^ 255;
+        d++;
+        length--;
+    }
+}
+
+static void j_transformation_apply_xor_inverse (gpointer data, guint64 length, guint64 offset)
+{
+    j_transformation_apply_xor(data, length, offset);
+}
+
+
 /**
  * Get a JTransformation object from type (and params)
  **/
-JTransformation* j_transformation_new (JTransformationType type, void* params)
+JTransformation* j_transformation_new (JTransformationType type,
+    JTransformationMode mode, void* params)
 {
     JTransformation* trafo;
 
@@ -69,6 +93,7 @@ JTransformation* j_transformation_new (JTransformationType type, void* params)
     trafo = g_slice_new(JTransformation);
 
     trafo->type = type;
+    trafo->mode = mode;
     trafo->ref_count = 1;
 
     switch (type)
@@ -106,6 +131,28 @@ void j_transformation_unref (JTransformation* item)
 	{
 		g_slice_free(JTransformation, item);
 	}
+}
+
+/**
+ * Applies a transformation (inverse) on the data with length and offset.
+ * This is done inplace (with an internal copy if necessary).
+ **/
+void j_transformation_apply (JTransformation* trafo, gboolean inverse,
+    gpointer data, guint64 length, guint64 offset)
+{
+    switch (trafo->type)
+    {
+        case J_TRANSFORMATION_TYPE_NONE:
+            break;
+        case J_TRANSFORMATION_TYPE_XOR:
+            if(inverse)
+                j_transformation_apply_xor_inverse(data, length, offset);
+            else
+                j_transformation_apply_xor(data, length, offset);
+            break;
+        default:
+            break;
+    }
 }
 
 /**

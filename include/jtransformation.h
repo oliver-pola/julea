@@ -39,13 +39,30 @@ enum JTransformationType
 
 typedef enum JTransformationType JTransformationType;
 
+enum JTransformationMode
+{
+    // Client encodes on write, decodes on read
+    J_TRANSFORMATION_MODE_CLIENT,
+
+    // Client encodes, server decodes on write
+    // Server encodes, client decodes on read
+    J_TRANSFORMATION_MODE_TRANSPORT,
+
+    // Server encodes on write, decodes on read
+    J_TRANSFORMATION_MODE_SERVER
+};
+
+typedef enum JTransformationMode JTransformationMode;
+
 struct JTransformation;
 
 typedef struct JTransformation JTransformation;
 
-JTransformation* j_transformation_new (JTransformationType, void*);
+JTransformation* j_transformation_new (JTransformationType, JTransformationMode, void*);
 JTransformation* j_transformation_ref (JTransformation*);
 void j_transformation_unref (JTransformation*);
+
+void j_transformation_apply (JTransformation*, gboolean, gpointer, guint64, guint64);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformation, j_transformation_unref)
 
