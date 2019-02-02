@@ -140,6 +140,8 @@ void j_transformation_unref (JTransformation* item)
 void j_transformation_apply (JTransformation* trafo, gboolean inverse,
     gpointer data, guint64 length, guint64 offset)
 {
+    g_return_if_fail(trafo != NULL);
+
     switch (trafo->type)
     {
         case J_TRANSFORMATION_TYPE_NONE:
