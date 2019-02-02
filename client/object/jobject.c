@@ -832,6 +832,7 @@ j_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
+	object->transformation = NULL;
 
 	j_trace_leave(G_STRFUNC);
 
@@ -889,6 +890,8 @@ j_object_unref (JObject* item)
 	{
 		g_free(item->name);
 		g_free(item->namespace);
+
+		j_transformation_unref(item->transformation);
 
 		g_slice_free(JObject, item);
 	}
@@ -1059,6 +1062,17 @@ j_object_write (JObject* object, gconstpointer data, guint64 length, guint64 off
 	j_batch_add(batch, operation);
 
 	j_trace_leave(G_STRFUNC);
+}
+
+/**
+ * Set transformation for this object, must be called straight after new
+ *
+ * \author Michael Blesel, Oliver Pola
+ **/
+void
+j_object_set_transform (JObject* object, JTransformation* transformation)
+{
+	object->transformation = j_transformation_ref(transformation);
 }
 
 /**

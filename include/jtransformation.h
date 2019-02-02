@@ -33,7 +33,8 @@ G_BEGIN_DECLS
 
 enum JTransformationType
 {
-    J_TRANSFORMATION_TYPE_DEFAULT
+    J_TRANSFORMATION_TYPE_NONE,
+    J_TRANSFORMATION_TYPE_XOR
 };
 
 typedef enum JTransformationType JTransformationType;
@@ -41,6 +42,12 @@ typedef enum JTransformationType JTransformationType;
 struct JTransformation;
 
 typedef struct JTransformation JTransformation;
+
+JTransformation* j_transformation_new (JTransformationType, void*);
+JTransformation* j_transformation_ref (JTransformation*);
+void j_transformation_unref (JTransformation*);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformation, j_transformation_unref)
 
 G_END_DECLS
 

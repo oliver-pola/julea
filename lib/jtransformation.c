@@ -50,7 +50,62 @@ struct JTransformation
 	 * Whether parts of data can be edited without considering the neighbourhood.
 	 **/
 	gboolean partial_edit;
+
+    /**
+	 * The reference count.
+	 **/
+	gint ref_count;
 };
+
+/**
+ * Get a JTransformation object from type (and params)
+ **/
+JTransformation* j_transformation_new (JTransformationType type, void* params)
+{
+    JTransformation* trafo;
+
+    (void)params; // unused
+
+    trafo = g_slice_new(JTransformation);
+
+    trafo->type = type;
+
+    switch (type)
+    {
+        case J_TRANSFORMATION_TYPE_NONE:
+            trafo->changes_size = FALSE;
+            trafo->partial_edit = TRUE;
+            break;
+        case J_TRANSFORMATION_TYPE_XOR:
+            trafo->changes_size = FALSE;
+            trafo->partial_edit = TRUE;
+            break;
+        default:
+            trafo->changes_size = FALSE;
+            trafo->partial_edit = TRUE;
+    }
+
+    return trafo;
+}
+
+JTransformation* j_transformation_ref (JTransformation* item)
+{
+    g_return_val_if_fail(item != NULL, NULL);
+
+	g_atomic_int_inc(&(item->ref_count));
+
+	return item;
+}
+
+void j_transformation_unref (JTransformation* item)
+{
+    g_return_if_fail(item != NULL);
+
+	if (g_atomic_int_dec_and_test(&(item->ref_count)))
+	{
+		g_slice_free(JTransformation, item);
+	}
+}
 
 /**
  * @}
