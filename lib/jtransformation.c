@@ -137,10 +137,37 @@ void j_transformation_unref (JTransformation* item)
  * Applies a transformation (inverse) on the data with length and offset.
  * This is done inplace (with an internal copy if necessary).
  **/
-void j_transformation_apply (JTransformation* trafo, gboolean inverse,
+void j_transformation_apply (JTransformation* trafo, JTransformationCaller caller,
     gpointer data, guint64 length, guint64 offset)
 {
+    gboolean inverse = FALSE;
+
     g_return_if_fail(trafo != NULL);
+
+    // Decide who needs to do transform and who inverse transform
+    switch (trafo->mode)
+    {
+        default:
+        case J_TRANSFORMATION_MODE_CLIENT:
+            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+                return;
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ)
+                inverse = TRUE;
+            break;
+        case J_TRANSFORMATION_MODE_TRANSPORT:
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+                inverse = TRUE;
+            break;
+        case J_TRANSFORMATION_MODE_SERVER:
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE)
+                return;
+            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ)
+                inverse = TRUE;
+            break;
+    }
 
     switch (trafo->type)
     {

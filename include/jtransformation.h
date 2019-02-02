@@ -54,6 +54,16 @@ enum JTransformationMode
 
 typedef enum JTransformationMode JTransformationMode;
 
+enum JTransformationCaller
+{
+    J_TRANSFORMATION_CALLER_CLIENT_READ,
+    J_TRANSFORMATION_CALLER_CLIENT_WRITE,
+    J_TRANSFORMATION_CALLER_SERVER_READ,
+    J_TRANSFORMATION_CALLER_SERVER_WRITE
+};
+
+typedef enum JTransformationCaller JTransformationCaller;
+
 struct JTransformation;
 
 typedef struct JTransformation JTransformation;
@@ -62,7 +72,7 @@ JTransformation* j_transformation_new (JTransformationType, JTransformationMode,
 JTransformation* j_transformation_ref (JTransformation*);
 void j_transformation_unref (JTransformation*);
 
-void j_transformation_apply (JTransformation*, gboolean, gpointer, guint64, guint64);
+void j_transformation_apply (JTransformation*, JTransformationCaller, gpointer, guint64, guint64);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformation, j_transformation_unref)
 
