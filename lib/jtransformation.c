@@ -64,13 +64,11 @@ struct JTransformation
 
 static void j_transformation_apply_xor (gpointer data, guint64 length, guint64 offset)
 {
-    unsigned char* d = data;
-    d += offset;
-    while(length)
+    gint8* d = data + offset;
+
+    for(guint i = 0; i < length; i++)
     {
-        *d = *d ^ 255;
-        d++;
-        length--;
+        d[i] = d[i] ^ 255;
     }
 }
 
@@ -168,6 +166,7 @@ void j_transformation_apply (JTransformation* trafo, JTransformationCaller calle
                 inverse = TRUE;
             break;
     }
+    
 
     switch (trafo->type)
     {

@@ -156,6 +156,10 @@ j_object_write_free (gpointer data)
 
 	j_object_unref(operation->write.object);
 
+    if(operation->write.object->transformation != NULL)
+    {
+        g_slice_free1(operation->write.length, operation->write.data);
+    }
 	g_slice_free(JObjectOperation, operation);
 }
 
@@ -1050,6 +1054,18 @@ j_object_write (JObject* object, gconstpointer data, guint64 length, guint64 off
 	iop->write.length = length;
 	iop->write.offset = offset;
 	iop->write.bytes_written = bytes_written;
+
+    //Transform the data if necessary
+    JTransformation* transformation = object->transformation;
+    
+    if(transformation != NULL)
+    {
+        //Copy the data in a new buffer and transform the copied data
+        gpointer transform_data = g_slice_copy(length, data);
+        j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE,
+                transform_data, length, 0);
+        iop->write.data = transform_data;
+    }
 
 	operation = j_operation_new();
 	operation->key = object;
