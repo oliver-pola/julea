@@ -572,6 +572,8 @@ j_object_write_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->write.offset;
 		guint64* bytes_written = operation->write.bytes_written;
 
+        JTransformation* transformation = object->transformation;
+
 		j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
 
 		/*
@@ -580,6 +582,18 @@ j_object_write_exec (JList* operations, JSemantics* semantics)
 			j_lock_add(lock, block_id);
 		}
 		*/
+
+        //Transform the data if necessary
+        if(transformation != NULL)
+        {
+            //Copy the data in a new buffer and transform the copied data
+            gpointer transform_data = g_slice_copy(length, data);
+            j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE,
+                    transform_data, length, 0);
+            operation->write.data = transform_data;
+            data = transform_data;
+        }
+
 
 		if (object_backend != NULL)
 		{
@@ -1054,18 +1068,6 @@ j_object_write (JObject* object, gconstpointer data, guint64 length, guint64 off
 	iop->write.length = length;
 	iop->write.offset = offset;
 	iop->write.bytes_written = bytes_written;
-
-    //Transform the data if necessary
-    JTransformation* transformation = object->transformation;
-    
-    if(transformation != NULL)
-    {
-        //Copy the data in a new buffer and transform the copied data
-        gpointer transform_data = g_slice_copy(length, data);
-        j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE,
-                transform_data, length, 0);
-        iop->write.data = transform_data;
-    }
 
 	operation = j_operation_new();
 	operation->key = object;
