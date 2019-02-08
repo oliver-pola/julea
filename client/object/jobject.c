@@ -355,6 +355,7 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 	g_autoptr(JMessage) message = NULL;
 	JObject* object;
 	gpointer object_handle;
+    JTransformation* transformation = NULL;
 
 	// FIXME
 	//JLock* lock = NULL;
@@ -368,6 +369,8 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 		JObjectOperation* operation = j_list_get_first(operations);
 
 		object = operation->status.object;
+
+        transformation = object->transformation;
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -409,6 +412,8 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->read.offset;
 		guint64* bytes_read = operation->read.bytes_read;
 
+        JTransformation* transformation = object->transformation;
+
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
 		if (object_backend != NULL)
@@ -417,6 +422,12 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 
 			ret = j_backend_object_read(object_backend, object_handle, data, length, offset, &nbytes) && ret;
 			j_helper_atomic_add(bytes_read, nbytes);
+
+            // Transform the read data if the object has a transformation set
+            if(transformation != NULL)
+            {
+                j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ, data, length, 0);
+            }
 		}
 		else
 		{
@@ -482,6 +493,12 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
 					g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
 				}
+
+                // Transform the read data if the object has a transformation set
+                if(transformation != NULL)
+                {
+                    j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ, data, operation->read.length, 0);
+                }
 			}
 
 			operations_done += reply_operation_count;
