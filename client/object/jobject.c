@@ -926,7 +926,8 @@ j_object_unref (JObject* item)
 		g_free(item->name);
 		g_free(item->namespace);
 
-		j_transformation_unref(item->transformation);
+		if (item->transformation)
+			j_transformation_unref(item->transformation);
 
 		g_slice_free(JObject, item);
 	}
