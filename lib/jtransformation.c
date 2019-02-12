@@ -62,6 +62,9 @@ struct JTransformation
 	gint ref_count;
 };
 
+/**
+ * XOR with 1 for each bit
+ */
 static void j_transformation_apply_xor (gpointer data, guint64 length, guint64 offset)
 {
     guint8* d = data;
@@ -76,6 +79,53 @@ static void j_transformation_apply_xor (gpointer data, guint64 length, guint64 o
 static void j_transformation_apply_xor_inverse (gpointer data, guint64 length, guint64 offset)
 {
     j_transformation_apply_xor(data, length, offset);
+}
+
+/**
+ * Simple run length encoding
+ */
+static void j_transformation_apply_rle (gpointer data, guint64 length, guint64 offset)
+{
+    guint8 value, copies;
+    guint8* d = data;
+    d += offset; // probably offset 0 must be enforced
+
+    if (length)
+    {
+        copies = 0; // this means count = 1, storing a 0 makes no sense
+        value = d[0];
+        for (guint i = 1; i < length; i++)
+        {
+            if (d[i] == value && copies < 255)
+            {
+                copies++;
+            }
+            else
+            {
+                // TODO: write precount and value to some other buffer
+            }
+        }
+    }
+}
+
+static void j_transformation_apply_rle_inverse (gpointer data, guint64 length, guint64 offset)
+{
+    guint8 value, count;
+    // guint8* buffer;
+    // giunt8* buffer_pos;
+    guint8* d = data;
+    d += offset; // probably offset 0 must be enforced
+
+    // TODO: get buffer
+    // buffer_pos = buffer;
+
+    for (guint i = 1; i < length; i += 2)
+    {
+        count = d[i - 1] + 1;
+        value = d[i];
+        // TODO: memset(buffer_pos, value, copies + 1);
+        // buffer_pos += count;
+    }
 }
 
 
@@ -104,6 +154,10 @@ JTransformation* j_transformation_new (JTransformationType type,
         case J_TRANSFORMATION_TYPE_XOR:
             trafo->changes_size = FALSE;
             trafo->partial_edit = TRUE;
+            break;
+        case J_TRANSFORMATION_TYPE_RLE:
+            trafo->changes_size = TRUE;
+            trafo->partial_edit = FALSE;
             break;
         default:
             trafo->changes_size = FALSE;
@@ -178,6 +232,12 @@ void j_transformation_apply (JTransformation* trafo, JTransformationCaller calle
                 j_transformation_apply_xor_inverse(data, length, offset);
             else
                 j_transformation_apply_xor(data, length, offset);
+            break;
+        case J_TRANSFORMATION_TYPE_RLE:
+            if(inverse)
+                j_transformation_apply_rle_inverse(data, length, offset);
+            else
+                j_transformation_apply_rle(data, length, offset);
             break;
         default:
             break;

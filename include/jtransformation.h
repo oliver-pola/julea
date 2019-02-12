@@ -34,7 +34,8 @@ G_BEGIN_DECLS
 enum JTransformationType
 {
     J_TRANSFORMATION_TYPE_NONE,
-    J_TRANSFORMATION_TYPE_XOR
+    J_TRANSFORMATION_TYPE_XOR,
+    J_TRANSFORMATION_TYPE_RLE
 };
 
 typedef enum JTransformationType JTransformationType;
