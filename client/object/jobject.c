@@ -412,7 +412,7 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->read.offset;
 		guint64* bytes_read = operation->read.bytes_read;
 
-        JTransformation* transformation = object->transformation;
+        transformation = object->transformation;
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
