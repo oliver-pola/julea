@@ -65,38 +65,51 @@ struct JTransformation
 /**
  * XOR with 1 for each bit
  */
-static void j_transformation_apply_xor (gpointer data, guint64 length, guint64 offset)
+static void j_transformation_apply_xor (gpointer* input, gpointer* output,
+    guint64* length, guint64* offset)
 {
-    guint8* d = data;
-    d += offset;
+    guint8* in;
+    guint8* out;
 
-    for(guint i = 0; i < length; i++)
+    in = *input;
+    in += *offset;
+
+    out = g_slice_alloc(*length);
+
+    for(guint i = 0; i < *length; i++)
     {
-        d[i] = d[i] ^ 255;
+        out[i] = in[i] ^ 255;
     }
+
+    *output = out;
+
+    // Buffer is only of size = length, so offset within buffer is now 0
+    *offset = 0;
 }
 
-static void j_transformation_apply_xor_inverse (gpointer data, guint64 length, guint64 offset)
+static void j_transformation_apply_xor_inverse (gpointer* input, gpointer* output,
+    guint64* length, guint64* offset)
 {
-    j_transformation_apply_xor(data, length, offset);
+    j_transformation_apply_xor(input, output, length, offset);
 }
 
 /**
  * Simple run length encoding
  */
-static void j_transformation_apply_rle (gpointer data, guint64 length, guint64 offset)
+static void j_transformation_apply_rle (gpointer* input, gpointer* output,
+    guint64* length, guint64* offset)
 {
     guint8 value, copies;
-    guint8* d = data;
-    d += offset; // probably offset 0 must be enforced
+    guint8* in = *input;
+    in += *offset; // probably offset 0 must be enforced
 
-    if (length)
+    if (*length > 0)
     {
         copies = 0; // this means count = 1, storing a 0 makes no sense
-        value = d[0];
-        for (guint i = 1; i < length; i++)
+        value = in[0];
+        for (guint i = 1; i < *length; i++)
         {
-            if (d[i] == value && copies < 255)
+            if (in[i] == value && copies < 255)
             {
                 copies++;
             }
@@ -108,21 +121,22 @@ static void j_transformation_apply_rle (gpointer data, guint64 length, guint64 o
     }
 }
 
-static void j_transformation_apply_rle_inverse (gpointer data, guint64 length, guint64 offset)
+static void j_transformation_apply_rle_inverse (gpointer* input, gpointer* output,
+    guint64* length, guint64* offset)
 {
     guint8 value, count;
     // guint8* buffer;
     // giunt8* buffer_pos;
-    guint8* d = data;
-    d += offset; // probably offset 0 must be enforced
+    guint8* in = *input;
+    in += *offset; // probably offset 0 must be enforced
 
     // TODO: get buffer
     // buffer_pos = buffer;
 
-    for (guint i = 1; i < length; i += 2)
+    for (guint i = 1; i < *length; i += 2)
     {
-        count = d[i - 1] + 1;
-        value = d[i];
+        count = in[i - 1] + 1;
+        value = in[i];
         // TODO: memset(buffer_pos, value, copies + 1);
         // buffer_pos += count;
     }
@@ -190,12 +204,20 @@ void j_transformation_unref (JTransformation* item)
  * Applies a transformation (inverse) on the data with length and offset.
  * This is done inplace (with an internal copy if necessary).
  **/
-void j_transformation_apply (JTransformation* trafo, JTransformationCaller caller,
-    gpointer data, guint64 length, guint64 offset)
+void j_transformation_apply (JTransformation* trafo, gpointer* data,
+    guint64* length, guint64* offset, JTransformationCaller caller)
 {
+    // Buffer for output of transformation, needs to be allocated by every method
+    // because only there the size is known / estimated
+    gpointer buffer;
+
     gboolean inverse = FALSE;
 
     g_return_if_fail(trafo != NULL);
+    g_return_if_fail(data != NULL);
+    g_return_if_fail(length != NULL);
+    g_return_if_fail(offset != NULL);
+    g_return_if_fail(*data != NULL);
 
     // Decide who needs to do transform and who inverse transform
     switch (trafo->mode)
@@ -226,21 +248,55 @@ void j_transformation_apply (JTransformation* trafo, JTransformationCaller calle
     switch (trafo->type)
     {
         case J_TRANSFORMATION_TYPE_NONE:
-            break;
+            return;
         case J_TRANSFORMATION_TYPE_XOR:
             if(inverse)
-                j_transformation_apply_xor_inverse(data, length, offset);
+                j_transformation_apply_xor_inverse(data, &buffer, length, offset);
             else
-                j_transformation_apply_xor(data, length, offset);
+                j_transformation_apply_xor(data, &buffer, length, offset);
             break;
         case J_TRANSFORMATION_TYPE_RLE:
             if(inverse)
-                j_transformation_apply_rle_inverse(data, length, offset);
+                j_transformation_apply_rle_inverse(data, &buffer, length, offset);
             else
-                j_transformation_apply_rle(data, length, offset);
+                j_transformation_apply_rle(data, &buffer, length, offset);
             break;
         default:
-            break;
+            return;
+    }
+
+    // write needs this delayed free, read does free early
+    if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
+        caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+    {
+        // The buffer becomes the data to transfer
+        g_return_if_fail(buffer != NULL);
+        *data = buffer;
+    }
+    else
+    {
+        // TODO this only makes sense if size does not change
+        memcpy(*data, buffer, *length);
+        g_slice_free1(*length, buffer);
+    }
+}
+
+/**
+ * Cleans up after j_transformation_apply is done, frees temp buffer
+ **/
+void j_transformation_cleanup (JTransformation* trafo, gpointer data,
+    guint64 length, guint64 offset, JTransformationCaller caller)
+{
+    (void)trafo; // unused
+    (void)offset; // unused
+
+    g_return_if_fail(data != NULL);
+
+    // write needs this delayed free, read does free early
+    if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
+        caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+    {
+        g_slice_free1(length, data);
     }
 }
 

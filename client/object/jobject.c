@@ -145,6 +145,12 @@ j_object_read_free (gpointer data)
 
 	j_object_unref(operation->read.object);
 
+	if(operation->read.object->transformation != NULL)
+    {
+		j_transformation_cleanup(operation->read.object->transformation,
+			operation->read.data, operation->read.length, operation->read.offset,
+			J_TRANSFORMATION_CALLER_CLIENT_READ);
+    }
 	g_slice_free(JObjectOperation, operation);
 }
 
@@ -158,7 +164,9 @@ j_object_write_free (gpointer data)
 
     if(operation->write.object->transformation != NULL)
     {
-        g_slice_free1(operation->write.length, operation->write.data);
+		j_transformation_cleanup(operation->write.object->transformation,
+			operation->write.data, operation->write.length, operation->write.offset,
+			J_TRANSFORMATION_CALLER_CLIENT_WRITE);
     }
 	g_slice_free(JObjectOperation, operation);
 }
@@ -426,7 +434,9 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
             // Transform the read data if the object has a transformation set
             if(transformation != NULL)
             {
-                j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ, data, length, 0);
+                j_transformation_apply(transformation, &data, &length, &offset,
+					J_TRANSFORMATION_CALLER_CLIENT_READ);
+				// data, length, offset must not change here
             }
 		}
 		else
@@ -497,7 +507,9 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
                 // Transform the read data if the object has a transformation set
                 if(transformation != NULL)
                 {
-                    j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ, data, operation->read.length, 0);
+                    j_transformation_apply(transformation, &data, &operation->read.length,
+						&operation->read.offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+					// data, length, offset must not change here
                 }
 			}
 
@@ -603,12 +615,12 @@ j_object_write_exec (JList* operations, JSemantics* semantics)
         //Transform the data if necessary
         if(transformation != NULL)
         {
-            //Copy the data in a new buffer and transform the copied data
-            gpointer transform_data = g_slice_copy(length, data);
-            j_transformation_apply(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE,
-                    transform_data, length, 0);
-            operation->write.data = transform_data;
-            data = transform_data;
+            j_transformation_apply(transformation, &data, &length, &offset,
+				J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+			// data, length, offset could have changed
+            operation->write.data = data;
+			operation->write.length = length;
+			operation->write.offset = offset;
         }
 
 
@@ -1106,9 +1118,10 @@ j_object_write (JObject* object, gconstpointer data, guint64 length, guint64 off
  * \author Michael Blesel, Oliver Pola
  **/
 void
-j_object_set_transform (JObject* object, JTransformation* transformation)
+j_object_set_transform (JObject* object, JTransformationType type,
+	JTransformationMode mode, void* params)
 {
-	object->transformation = j_transformation_ref(transformation);
+	object->transformation = j_transformation_new(type, mode, params);
 }
 
 /**
