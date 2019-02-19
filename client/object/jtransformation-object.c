@@ -37,14 +37,49 @@
 /**
  * \defgroup JTransformationObject Object
  *
- * Data structures and functions for managing objects.
+ * Data structures and functions for managing transformation objects.
  *
  * @{
  **/
 
+struct JTransformationObjectOperation
+{
+	union
+	{
+		struct
+		{
+			JTransformationObject* object;
+			gint64* modification_time;
+			guint64* size;
+		}
+		status;
+
+		struct
+		{
+			JTransformationObject* object;
+			gpointer data;
+			guint64 length;
+			guint64 offset;
+			guint64* bytes_read;
+		}
+		read;
+
+		struct
+		{
+			JTransformationObject* object;
+			gconstpointer data;
+			guint64 length;
+			guint64 offset;
+			guint64* bytes_written;
+		}
+		write;
+	};
+};
+
+typedef struct JTransformationObjectOperation JTransformationObjectOperation;
 
 /**
- * A JObject.
+ * A JTransformationObject.
  **/
 struct JTransformationObject
 {
@@ -64,9 +99,426 @@ struct JTransformationObject
 };
 
 /**
+ * A JObject.
+ **/
+struct JObject
+{
+	/**
+	 * The data server index.
+	 */
+	guint32 index;
+
+	/**
+	 * The namespace.
+	 **/
+	gchar* namespace;
+
+	/**
+	 * The name.
+	 **/
+	gchar* name;
+
+	/**
+	 * The reference count.
+	 **/
+	gint ref_count;
+
+    /**
+     * The Transformation
+     **/
+    JTransformation* transformation;
+};
+
+static
+void
+j_transformation_object_read_free (gpointer data)
+{
+	JTransformationObjectOperation* operation = data;
+
+	j_transformation_object_unref(operation->read.object);
+
+	if(operation->read.object->transformation != NULL)
+    {
+		j_transformation_cleanup(operation->read.object->transformation,
+			operation->read.data, operation->read.length, operation->read.offset,
+			J_TRANSFORMATION_CALLER_CLIENT_READ);
+    }
+	g_slice_free(JTransformationObjectOperation, operation);
+}
+
+static
+void
+j_transformation_object_write_free (gpointer data)
+{
+	JTransformationObjectOperation* operation = data;
+
+	j_transformation_object_unref(operation->write.object);
+
+    if(operation->write.object->transformation != NULL)
+    {
+		j_transformation_cleanup(operation->write.object->transformation,
+			operation->write.data, operation->write.length, operation->write.offset,
+			J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+    }
+	g_slice_free(JTransformationObjectOperation, operation);
+}
+
+static
+gboolean
+j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
+{
+	gboolean ret = TRUE;
+
+	JBackend* object_backend;
+	JListIterator* it;
+	g_autoptr(JMessage) message = NULL;
+	JObject* object;
+    JTransformationObject* transformation_object;
+	gpointer object_handle;
+    JTransformation* transformation = NULL;
+
+	// FIXME
+	//JLock* lock = NULL;
+
+	g_return_val_if_fail(operations != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	{
+		JTransformationObjectOperation* operation = j_list_get_first(operations);
+
+        transformation_object = operation->status.object;
+		object = transformation_object->object;
+
+        transformation = transformation_object->transformation;
+
+		g_assert(operation != NULL);
+		g_assert(object != NULL);
+	}
+
+	it = j_list_iterator_new(operations);
+	object_backend = j_object_backend();
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+	}
+	else
+	{
+		gsize name_len;
+		gsize namespace_len;
+
+		namespace_len = strlen(object->namespace) + 1;
+		name_len = strlen(object->name) + 1;
+
+		message = j_message_new(J_MESSAGE_OBJECT_READ, namespace_len + name_len);
+		j_message_set_safety(message, semantics);
+		j_message_append_n(message, object->namespace, namespace_len);
+		j_message_append_n(message, object->name, name_len);
+	}
+
+	/*
+	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
+	{
+		lock = j_lock_new("item", path);
+	}
+	*/
+
+	while (j_list_iterator_next(it))
+	{
+		JTransformationObjectOperation* operation = j_list_iterator_get(it);
+		gpointer data = operation->read.data;
+		guint64 length = operation->read.length;
+		guint64 offset = operation->read.offset;
+		guint64* bytes_read = operation->read.bytes_read;
+
+        transformation = transformation_object->transformation;
+
+		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
+
+		if (object_backend != NULL)
+		{
+			guint64 nbytes = 0;
+
+			ret = j_backend_object_read(object_backend, object_handle, data, length, offset, &nbytes) && ret;
+			j_helper_atomic_add(bytes_read, nbytes);
+
+            // Transform the read data if the object has a transformation set
+            if(transformation != NULL)
+            {
+                j_transformation_apply(transformation, &data, &length, &offset,
+					J_TRANSFORMATION_CALLER_CLIENT_READ);
+				// data, length, offset must not change here
+            }
+		}
+		else
+		{
+			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+			j_message_append_8(message, &length);
+			j_message_append_8(message, &offset);
+		}
+
+		j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
+	}
+
+	j_list_iterator_free(it);
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_close(object_backend, object_handle) && ret;
+	}
+	else
+	{
+		g_autoptr(JMessage) reply = NULL;
+		GSocketConnection* object_connection;
+		guint32 operations_done;
+		guint32 operation_count;
+
+		object_connection = j_connection_pool_pop_object(object->index);
+		j_message_send(message, object_connection);
+
+		reply = j_message_new_reply(message);
+
+		operations_done = 0;
+		operation_count = j_message_get_count(message);
+
+		it = j_list_iterator_new(operations);
+
+		/**
+		 * This extra loop is necessary because the server might send multiple
+		 * replies per message. The same reply object can be used to receive
+		 * multiple times.
+		 */
+		while (operations_done < operation_count)
+		{
+			guint32 reply_operation_count;
+
+			j_message_receive(reply, object_connection);
+
+			reply_operation_count = j_message_get_count(reply);
+
+			for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
+			{
+				JTransformationObjectOperation* operation = j_list_iterator_get(it);
+				gpointer data = operation->read.data;
+				guint64* bytes_read = operation->read.bytes_read;
+
+				guint64 nbytes;
+
+				nbytes = j_message_get_8(reply);
+				j_helper_atomic_add(bytes_read, nbytes);
+
+				if (nbytes > 0)
+				{
+					GInputStream* input;
+
+					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
+					g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
+				}
+
+                // Transform the read data if the object has a transformation set
+                if(transformation != NULL)
+                {
+                    j_transformation_apply(transformation, &data, &operation->read.length,
+						&operation->read.offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+					// data, length, offset must not change here
+                }
+			}
+
+			operations_done += reply_operation_count;
+		}
+
+		j_list_iterator_free(it);
+
+		j_connection_pool_push_object(object->index, object_connection);
+	}
+
+	/*
+	if (lock != NULL)
+	{
+		// FIXME busy wait
+		while (!j_lock_acquire(lock));
+
+		j_lock_free(lock);
+	}
+	*/
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+
+static
+gboolean
+j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
+{
+	gboolean ret = TRUE;
+
+	JBackend* object_backend;
+	JListIterator* it;
+	g_autoptr(JMessage) message = NULL;
+	JObject* object;
+    JTransformationObject* transformation_object;
+	gpointer object_handle;
+
+	// FIXME
+	//JLock* lock = NULL;
+
+	g_return_val_if_fail(operations != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	{
+		JTransformationObjectOperation* operation = j_list_get_first(operations);
+
+		transformation_object = operation->status.object;
+        object = transformation_object->object;
+
+		g_assert(operation != NULL);
+		g_assert(object != NULL);
+	}
+
+	it = j_list_iterator_new(operations);
+	object_backend = j_object_backend();
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+	}
+	else
+	{
+		gsize name_len;
+		gsize namespace_len;
+
+		namespace_len = strlen(object->namespace) + 1;
+		name_len = strlen(object->name) + 1;
+
+		message = j_message_new(J_MESSAGE_OBJECT_WRITE, namespace_len + name_len);
+		j_message_set_safety(message, semantics);
+		j_message_append_n(message, object->namespace, namespace_len);
+		j_message_append_n(message, object->name, name_len);
+	}
+
+	/*
+	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
+	{
+		lock = j_lock_new("item", path);
+	}
+	*/
+
+	while (j_list_iterator_next(it))
+	{
+		JTransformationObjectOperation* operation = j_list_iterator_get(it);
+		gconstpointer data = operation->write.data;
+		guint64 length = operation->write.length;
+		guint64 offset = operation->write.offset;
+		guint64* bytes_written = operation->write.bytes_written;
+
+        JTransformation* transformation = transformation_object->transformation;
+
+		j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
+
+		/*
+		if (lock != NULL)
+		{
+			j_lock_add(lock, block_id);
+		}
+		*/
+
+        //Transform the data if necessary
+        if(transformation != NULL)
+        {
+            j_transformation_apply(transformation, &data, &length, &offset,
+				J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+			// data, length, offset could have changed
+            operation->write.data = data;
+			operation->write.length = length;
+			operation->write.offset = offset;
+        }
+
+
+		if (object_backend != NULL)
+		{
+			guint64 nbytes = 0;
+
+			ret = j_backend_object_write(object_backend, object_handle, data, length, offset, &nbytes) && ret;
+			j_helper_atomic_add(bytes_written, nbytes);
+		}
+		else
+		{
+			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+			j_message_append_8(message, &length);
+			j_message_append_8(message, &offset);
+			j_message_add_send(message, data, length);
+
+			// Fake bytes_written here instead of doing another loop further down
+			if (j_semantics_get(semantics, J_SEMANTICS_SAFETY) == J_SEMANTICS_SAFETY_NONE)
+			{
+				j_helper_atomic_add(bytes_written, length);
+			}
+		}
+
+		j_trace_file_end(object->name, J_TRACE_FILE_WRITE, length, offset);
+	}
+
+	j_list_iterator_free(it);
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_close(object_backend, object_handle) && ret;
+	}
+	else
+	{
+		GSocketConnection* object_connection;
+
+		object_connection = j_connection_pool_pop_object(object->index);
+		j_message_send(message, object_connection);
+
+		if (j_message_get_flags(message) & J_MESSAGE_FLAGS_SAFETY_NETWORK)
+		{
+			g_autoptr(JMessage) reply = NULL;
+			guint64 nbytes;
+
+			reply = j_message_new_reply(message);
+			j_message_receive(reply, object_connection);
+
+			it = j_list_iterator_new(operations);
+
+			while (j_list_iterator_next(it))
+			{
+				JTransformationObjectOperation* operation = j_list_iterator_get(it);
+				guint64* bytes_written = operation->write.bytes_written;
+
+				nbytes = j_message_get_8(reply);
+				j_helper_atomic_add(bytes_written, nbytes);
+			}
+
+			j_list_iterator_free(it);
+		}
+
+		j_connection_pool_push_object(object->index, object_connection);
+	}
+
+	/*
+	if (lock != NULL)
+	{
+		// FIXME busy wait
+		while (!j_lock_acquire(lock));
+
+		j_lock_free(lock);
+	}
+	*/
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+/**
  * Creates a new item.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * JTransformationObject* i;
@@ -89,7 +541,7 @@ j_transformation_object_new (gchar const* namespace, gchar const* name, JTransfo
     object = g_slice_new(JTransformationObject);
     object->object = j_object_new(namespace, name);
     object->ref_count = 1;
-    j_object_set_transform(object->object, transformation_type, transformation_mode, NULL);
+    object->transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
     
     j_trace_leave(G_STRFUNC);
 
@@ -99,7 +551,7 @@ j_transformation_object_new (gchar const* namespace, gchar const* name, JTransfo
 /**
  * Creates a new item.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * JTransformationObject* i;
@@ -110,7 +562,7 @@ j_transformation_object_new (gchar const* namespace, gchar const* name, JTransfo
  * \param name         An item name.
  * \param distribution A distribution.
  *
- * \return A new item. Should be freed with j_object_unref().
+ * \return A new item. Should be freed with j_transformation_object_unref().
  **/
 JTransformationObject*
 j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name, JTransformationType transformation_type, JTransformationMode transformation_mode)
@@ -122,7 +574,7 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
 	object = g_slice_new(JTransformationObject);
     object->object = j_object_new_for_index (index, namespace, name);
 	object->ref_count = 1;
-    j_object_set_transform(object->object, transformation_type, transformation_mode, NULL);
+    object->transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
 
 	j_trace_leave(G_STRFUNC);
 
@@ -132,12 +584,12 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
 /**
  * Increases an item's reference count.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
- * JObject* i;
+ * JTransformationObject* i;
  *
- * j_object_ref(i);
+ * j_transformation_object_ref(i);
  * \endcode
  *
  * \param item An item.
@@ -162,7 +614,7 @@ j_transformation_object_ref (JTransformationObject* item)
  * Decreases an item's reference count.
  * When the reference count reaches zero, frees the memory allocated for the item.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
@@ -189,7 +641,7 @@ j_transformation_object_unref (JTransformationObject* item)
 /**
  * Creates an object.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
@@ -198,7 +650,7 @@ j_transformation_object_unref (JTransformationObject* item)
  * \param distribution A distribution.
  * \param batch        A batch.
  *
- * \return A new item. Should be freed with j_object_unref().
+ * \return A new item. Should be freed with j_transformation_object_unref().
  **/
 void
 j_transformation_object_create (JTransformationObject* object, JBatch* batch)
@@ -209,7 +661,7 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch)
 /**
  * Deletes an object.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
@@ -226,7 +678,7 @@ j_transformation_object_delete (JTransformationObject* object, JBatch* batch)
 /**
  * Reads an item.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
@@ -241,16 +693,43 @@ j_transformation_object_delete (JTransformationObject* object, JBatch* batch)
 void
 j_transformation_object_read (JTransformationObject* object, gpointer data, guint64 length, guint64 offset, guint64* bytes_read, JBatch* batch)
 {
-    j_object_read(object->object, data, length, offset, bytes_read, batch);
+	JTransformationObjectOperation* iop;
+	JOperation* operation;
+
+	g_return_if_fail(object != NULL);
+	g_return_if_fail(data != NULL);
+	g_return_if_fail(length > 0);
+	g_return_if_fail(bytes_read != NULL);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	iop = g_slice_new(JTransformationObjectOperation);
+	iop->read.object = j_transformation_object_ref(object);
+	iop->read.data = data;
+	iop->read.length = length;
+	iop->read.offset = offset;
+	iop->read.bytes_read = bytes_read;
+
+	operation = j_operation_new();
+	operation->key = object;
+	operation->data = iop;
+	operation->exec_func = j_transformation_object_read_exec;
+	operation->free_func = j_transformation_object_read_free;
+
+	*bytes_read = 0;
+
+	j_batch_add(batch, operation);
+
+	j_trace_leave(G_STRFUNC);
 }
 
 /**
  * Writes an item.
  *
  * \note
- * j_object_write() modifies bytes_written even if j_batch_execute() is not called.
+ * j_transformation_object_write() modifies bytes_written even if j_batch_execute() is not called.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
@@ -265,14 +744,41 @@ j_transformation_object_read (JTransformationObject* object, gpointer data, guin
 void
 j_transformation_object_write (JTransformationObject* object, gconstpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
 {
-    j_object_write(object->object, data, length, offset, bytes_written, batch);
+	JTransformationObjectOperation* iop;
+	JOperation* operation;
+
+	g_return_if_fail(object != NULL);
+	g_return_if_fail(data != NULL);
+	g_return_if_fail(length > 0);
+	g_return_if_fail(bytes_written != NULL);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	iop = g_slice_new(JTransformationObjectOperation);
+	iop->write.object = j_transformation_object_ref(object);
+	iop->write.data = data;
+	iop->write.length = length;
+	iop->write.offset = offset;
+	iop->write.bytes_written = bytes_written;
+
+	operation = j_operation_new();
+	operation->key = object;
+	operation->data = iop;
+	operation->exec_func = j_transformation_object_write_exec;
+	operation->free_func = j_transformation_object_write_free;
+
+	*bytes_written = 0;
+
+	j_batch_add(batch, operation);
+
+	j_trace_leave(G_STRFUNC);
 }
 
 
 /**
  * Get the status of an item.
  *
- * \author Michael Kuhn
+ * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
