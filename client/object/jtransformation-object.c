@@ -83,26 +83,6 @@ typedef struct JTransformationObjectOperation JTransformationObjectOperation;
  **/
 struct JTransformationObject
 {
-    /**
-     * The underlying Object
-     **/
-    JObject* object;
-	/**
-	 * The reference count.
-	 **/
-	gint ref_count;
-
-    /**
-     * The Transformation
-     **/
-    JTransformation* transformation;
-};
-
-/**
- * A JObject.
- **/
-struct JObject
-{
 	/**
 	 * The data server index.
 	 */
@@ -116,11 +96,12 @@ struct JObject
 	/**
 	 * The name.
 	 **/
-	gchar* name;
 
+	gchar* name;
 	/**
 	 * The reference count.
 	 **/
+
 	gint ref_count;
 
     /**
@@ -128,6 +109,35 @@ struct JObject
      **/
     JTransformation* transformation;
 };
+
+static
+void
+j_transformation_object_create_free (gpointer data)
+{
+	JTransformationObject* object = data;
+
+	j_transformation_object_unref(object);
+}
+
+static
+void
+j_transformation_object_delete_free (gpointer data)
+{
+	JTransformationObject* object = data;
+
+	j_transformation_object_unref(object);
+}
+
+static
+void
+j_transformation_object_status_free (gpointer data)
+{
+	JTransformationObjectOperation* operation = data;
+
+	j_transformation_object_unref(operation->status.object);
+
+	g_slice_free(JTransformationObjectOperation, operation);
+}
 
 static
 void
@@ -165,6 +175,187 @@ j_transformation_object_write_free (gpointer data)
 
 static
 gboolean
+j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
+{
+	gboolean ret = FALSE;
+
+	JBackend* object_backend;
+	g_autoptr(JListIterator) it = NULL;
+	g_autoptr(JMessage) message = NULL;
+	gchar const* namespace;
+	gsize namespace_len;
+	guint32 index;
+
+	g_return_val_if_fail(operations != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	{
+		JTransformationObject* object;
+
+		object = j_list_get_first(operations);
+		g_assert(object != NULL);
+
+		namespace = object->namespace;
+		namespace_len = strlen(namespace) + 1;
+		index = object->index;
+	}
+
+	it = j_list_iterator_new(operations);
+	object_backend = j_object_backend();
+
+	if (object_backend == NULL)
+	{
+		/**
+		 * Force safe semantics to make the server send a reply.
+		 * Otherwise, nasty races can occur when using unsafe semantics:
+		 * - The client creates the item and sends its first write.
+		 * - The client sends another operation using another connection from the pool.
+		 * - The second operation is executed first and fails because the item does not exist.
+		 * This does not completely eliminate all races but fixes the common case of create, write, write, ...
+		 **/
+		message = j_message_new(J_MESSAGE_OBJECT_CREATE, namespace_len);
+		j_message_set_safety(message, semantics);
+		//j_message_force_safety(message, J_SEMANTICS_SAFETY_NETWORK);
+		j_message_append_n(message, namespace, namespace_len);
+	}
+
+	while (j_list_iterator_next(it))
+	{
+		JTransformationObject* object = j_list_iterator_get(it);
+
+		if (object_backend != NULL)
+		{
+			gpointer object_handle;
+
+			ret = j_backend_object_create(object_backend, object->namespace, object->name, &object_handle) && ret;
+			ret = j_backend_object_close(object_backend, object_handle) && ret;
+		}
+		else
+		{
+			gsize name_len;
+
+			name_len = strlen(object->name) + 1;
+
+			j_message_add_operation(message, name_len);
+			j_message_append_n(message, object->name, name_len);
+		}
+	}
+
+	if (object_backend == NULL)
+	{
+		GSocketConnection* object_connection;
+
+		object_connection = j_connection_pool_pop_object(index);
+		j_message_send(message, object_connection);
+
+		if (j_message_get_flags(message) & J_MESSAGE_FLAGS_SAFETY_NETWORK)
+		{
+			g_autoptr(JMessage) reply = NULL;
+
+			reply = j_message_new_reply(message);
+			j_message_receive(reply, object_connection);
+
+			/* FIXME do something with reply */
+		}
+
+		j_connection_pool_push_object(index, object_connection);
+	}
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+
+static
+gboolean
+j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
+{
+	gboolean ret = FALSE;
+
+	JBackend* object_backend;
+	g_autoptr(JListIterator) it = NULL;
+	g_autoptr(JMessage) message = NULL;
+	gchar const* namespace;
+	gsize namespace_len;
+	guint32 index;
+
+	g_return_val_if_fail(operations != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	{
+		JTransformationObject* object;
+
+		object = j_list_get_first(operations);
+		g_assert(object != NULL);
+
+		namespace = object->namespace;
+		namespace_len = strlen(namespace) + 1;
+		index = object->index;
+	}
+
+	it = j_list_iterator_new(operations);
+	object_backend = j_object_backend();
+
+	if (object_backend == NULL)
+	{
+		message = j_message_new(J_MESSAGE_OBJECT_DELETE, namespace_len);
+		j_message_set_safety(message, semantics);
+		j_message_append_n(message, namespace, namespace_len);
+	}
+
+	while (j_list_iterator_next(it))
+	{
+		JTransformationObject* object = j_list_iterator_get(it);
+
+		if (object_backend != NULL)
+		{
+			gpointer object_handle;
+
+			ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+			ret = j_backend_object_delete(object_backend, object_handle) && ret;
+		}
+		else
+		{
+			gsize name_len;
+
+			name_len = strlen(object->name) + 1;
+
+			j_message_add_operation(message, name_len);
+			j_message_append_n(message, object->name, name_len);
+		}
+	}
+
+	if (object_backend == NULL)
+	{
+		GSocketConnection* object_connection;
+
+		object_connection = j_connection_pool_pop_object(index);
+		j_message_send(message, object_connection);
+
+		if (j_message_get_flags(message) & J_MESSAGE_FLAGS_SAFETY_NETWORK)
+		{
+			g_autoptr(JMessage) reply = NULL;
+
+			reply = j_message_new_reply(message);
+			j_message_receive(reply, object_connection);
+
+			/* FIXME do something with reply */
+		}
+
+		j_connection_pool_push_object(index, object_connection);
+	}
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+
+static
+gboolean
 j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 {
 	gboolean ret = TRUE;
@@ -172,8 +363,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	JBackend* object_backend;
 	JListIterator* it;
 	g_autoptr(JMessage) message = NULL;
-	JObject* object;
-    JTransformationObject* transformation_object;
+    JTransformationObject* object;
 	gpointer object_handle;
     JTransformation* transformation = NULL;
 
@@ -188,10 +378,8 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	{
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
-        transformation_object = operation->status.object;
-		object = transformation_object->object;
-
-        transformation = transformation_object->transformation;
+        object = operation->status.object;
+        transformation = object->transformation;
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -233,7 +421,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->read.offset;
 		guint64* bytes_read = operation->read.bytes_read;
 
-        transformation = transformation_object->transformation;
+        transformation = object->transformation;
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
@@ -358,8 +546,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	JBackend* object_backend;
 	JListIterator* it;
 	g_autoptr(JMessage) message = NULL;
-	JObject* object;
-    JTransformationObject* transformation_object;
+    JTransformationObject* object;
 	gpointer object_handle;
 
 	// FIXME
@@ -373,8 +560,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	{
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
-		transformation_object = operation->status.object;
-        object = transformation_object->object;
+		object = operation->status.object;
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -416,7 +602,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->write.offset;
 		guint64* bytes_written = operation->write.bytes_written;
 
-        JTransformation* transformation = transformation_object->transformation;
+        JTransformation* transformation = object->transformation;
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
 
@@ -515,6 +701,113 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 
 	return ret;
 }
+
+static
+gboolean
+j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
+{
+	gboolean ret = FALSE;
+
+	JBackend* object_backend;
+	JListIterator* it;
+	g_autoptr(JMessage) message = NULL;
+	gchar const* namespace;
+	gsize namespace_len;
+	guint32 index;
+
+	g_return_val_if_fail(operations != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	{
+		JTransformationObjectOperation* operation = j_list_get_first(operations);
+		JTransformationObject* object = operation->status.object;
+
+		g_assert(operation != NULL);
+		g_assert(object != NULL);
+
+		namespace = object->namespace;
+		namespace_len = strlen(namespace) + 1;
+		index = object->index;
+	}
+
+	it = j_list_iterator_new(operations);
+	object_backend = j_object_backend();
+
+	if (object_backend == NULL)
+	{
+		message = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
+		j_message_set_safety(message, semantics);
+		j_message_append_n(message, namespace, namespace_len);
+	}
+
+	while (j_list_iterator_next(it))
+	{
+		JTransformationObjectOperation* operation = j_list_iterator_get(it);
+		JTransformationObject* object = operation->status.object;
+		gint64* modification_time = operation->status.modification_time;
+		guint64* size = operation->status.size;
+
+		if (object_backend != NULL)
+		{
+			gpointer object_handle;
+
+			ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+			ret = j_backend_object_status(object_backend, object_handle, modification_time, size) && ret;
+			ret = j_backend_object_close(object_backend, object_handle) && ret;
+		}
+		else
+		{
+			gsize name_len;
+
+			name_len = strlen(object->name) + 1;
+
+			j_message_add_operation(message, name_len);
+			j_message_append_n(message, object->name, name_len);
+		}
+	}
+
+	j_list_iterator_free(it);
+
+	if (object_backend == NULL)
+	{
+		g_autoptr(JMessage) reply = NULL;
+		GSocketConnection* object_connection;
+
+		object_connection = j_connection_pool_pop_object(index);
+		j_message_send(message, object_connection);
+
+		reply = j_message_new_reply(message);
+		j_message_receive(reply, object_connection);
+
+		it = j_list_iterator_new(operations);
+
+		while (j_list_iterator_next(it))
+		{
+			JTransformationObjectOperation* operation = j_list_iterator_get(it);
+			gint64* modification_time = operation->status.modification_time;
+			guint64* size = operation->status.size;
+			gint64 modification_time_;
+			guint64 size_;
+
+			modification_time_ = j_message_get_8(reply);
+			size_ = j_message_get_8(reply);
+
+			*modification_time = modification_time_;
+			*size = size_;
+		}
+
+		j_list_iterator_free(it);
+
+		j_connection_pool_push_object(index, object_connection);
+	}
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+
 /**
  * Creates a new item.
  *
@@ -534,18 +827,24 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 JTransformationObject*
 j_transformation_object_new (gchar const* namespace, gchar const* name, JTransformationType transformation_type, JTransformationMode transformation_mode)
 {
-    JTransformationObject* object;
+	JConfiguration* configuration = j_configuration();
+	JTransformationObject* object;
 
-    j_trace_enter(G_STRFUNC, NULL);
+	g_return_val_if_fail(namespace != NULL, NULL);
+	g_return_val_if_fail(name != NULL, NULL);
 
-    object = g_slice_new(JTransformationObject);
-    object->object = j_object_new(namespace, name);
-    object->ref_count = 1;
+	j_trace_enter(G_STRFUNC, NULL);
+
+	object = g_slice_new(JTransformationObject);
+	object->index = j_helper_hash(name) % j_configuration_get_object_server_count(configuration);
+	object->namespace = g_strdup(namespace);
+	object->name = g_strdup(name);
+	object->ref_count = 1;
     object->transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
-    
-    j_trace_leave(G_STRFUNC);
 
-    return object;
+	j_trace_leave(G_STRFUNC);
+
+	return object;
 }
 
 /**
@@ -567,12 +866,19 @@ j_transformation_object_new (gchar const* namespace, gchar const* name, JTransfo
 JTransformationObject*
 j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name, JTransformationType transformation_type, JTransformationMode transformation_mode)
 {
-    JTransformationObject* object;
+	JConfiguration* configuration = j_configuration();
+	JTransformationObject* object;
+
+	g_return_val_if_fail(namespace != NULL, NULL);
+	g_return_val_if_fail(name != NULL, NULL);
+	g_return_val_if_fail(index < j_configuration_get_object_server_count(configuration), NULL);
 
 	j_trace_enter(G_STRFUNC, NULL);
 
 	object = g_slice_new(JTransformationObject);
-    object->object = j_object_new_for_index (index, namespace, name);
+	object->index = index;
+	object->namespace = g_strdup(namespace);
+	object->name = g_strdup(name);
 	object->ref_count = 1;
     object->transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
 
@@ -630,7 +936,11 @@ j_transformation_object_unref (JTransformationObject* item)
 
 	if (g_atomic_int_dec_and_test(&(item->ref_count)))
 	{
-        j_object_unref(item->object);
+		g_free(item->name);
+		g_free(item->namespace);
+
+		if (item->transformation)
+			j_transformation_unref(item->transformation);
 
 		g_slice_free(JTransformationObject, item);
 	}
@@ -655,7 +965,22 @@ j_transformation_object_unref (JTransformationObject* item)
 void
 j_transformation_object_create (JTransformationObject* object, JBatch* batch)
 {
-    j_object_create(object->object, batch);
+	JOperation* operation;
+
+	g_return_if_fail(object != NULL);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	operation = j_operation_new();
+	// FIXME key = index + namespace
+	operation->key = object;
+	operation->data = j_transformation_object_ref(object);
+	operation->exec_func = j_transformation_object_create_exec;
+	operation->free_func = j_transformation_object_create_free;
+
+	j_batch_add(batch, operation);
+
+	j_trace_leave(G_STRFUNC);
 }
 
 /**
@@ -672,7 +997,21 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch)
 void
 j_transformation_object_delete (JTransformationObject* object, JBatch* batch)
 {
-    j_object_delete(object->object, batch);
+	JOperation* operation;
+
+	g_return_if_fail(object != NULL);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	operation = j_operation_new();
+	operation->key = object;
+	operation->data = j_transformation_object_ref(object);
+	operation->exec_func = j_transformation_object_delete_exec;
+	operation->free_func = j_transformation_object_delete_free;
+
+	j_batch_add(batch, operation);
+
+	j_trace_leave(G_STRFUNC);
 }
 
 /**
@@ -789,7 +1128,27 @@ j_transformation_object_write (JTransformationObject* object, gconstpointer data
 void
 j_transformation_object_status (JTransformationObject* object, gint64* modification_time, guint64* size, JBatch* batch)
 {
-    j_object_status(object->object, modification_time, size, batch);
+	JTransformationObjectOperation* iop;
+	JOperation* operation;
+
+	g_return_if_fail(object != NULL);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	iop = g_slice_new(JTransformationObjectOperation);
+	iop->status.object = j_transformation_object_ref(object);
+	iop->status.modification_time = modification_time;
+	iop->status.size = size;
+
+	operation = j_operation_new();
+	operation->key = object;
+	operation->data = iop;
+	operation->exec_func = j_transformation_object_status_exec;
+	operation->free_func = j_transformation_object_status_free;
+
+	j_batch_add(batch, operation);
+
+	j_trace_leave(G_STRFUNC);
 }
 
 /**
