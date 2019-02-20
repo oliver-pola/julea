@@ -31,6 +31,8 @@
 #include <object/jtransformation-object.h>
 #include <object/jobject.h>
 
+#include <julea-kv.h>
+
 #include <julea.h>
 #include <julea-internal.h>
 
@@ -108,6 +110,11 @@ struct JTransformationObject
      * The Transformation
      **/
     JTransformation* transformation;
+
+    /**
+     * KV Object which stores transformation metadata
+     **/
+    JKV* metadata;
 };
 
 static
@@ -355,6 +362,40 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 }
 
 static
+void
+j_transformation_object_set_transformation(JTransformationObject* object, JTransformationType type, JTransformationMode mode, void* params)
+{
+    object->transformation = j_transformation_new(type, mode, params);
+}
+
+
+static
+bool
+j_transformation_object_load_transformation(JTransformationObject* object, JSemantics* semantics)
+{
+    bool ret = false;
+    // TODO memoty management pointer
+    bson_t* metadata_bson = bson_new();
+    JBatch* kv_batch = j_batch_new(semantics);
+
+    j_kv_get(object->metadata, metadata_bson, kv_batch);
+    j_batch_execute(kv_batch);
+    
+    bson_iter_t iter;
+    if(bson_iter_init(&iter, metadata_bson))
+    {
+        bson_iter_find(&iter, "JTransformationType");
+        int type = bson_iter_int32(&iter);
+        bson_iter_find(&iter, "JTransformationMode");
+        int mode = bson_iter_int32(&iter);
+
+        // TODO handle params struct
+        j_transformation_object_set_transformation(object, type, mode, NULL);
+        ret = true;
+    }
+    return ret;
+}
+static
 gboolean
 j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 {
@@ -379,7 +420,13 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
         object = operation->status.object;
+
         transformation = object->transformation;
+        if(transformation == NULL)
+        {
+            j_transformation_object_load_transformation(object, semantics);
+            transformation = object->transformation;
+        }
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -422,6 +469,11 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64* bytes_read = operation->read.bytes_read;
 
         transformation = object->transformation;
+        if(transformation == NULL)
+        {
+            j_transformation_object_load_transformation(object, semantics);
+            transformation = object->transformation;
+        }
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
@@ -603,6 +655,11 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		guint64* bytes_written = operation->write.bytes_written;
 
         JTransformation* transformation = object->transformation;
+        if(transformation == NULL)
+        {
+            j_transformation_object_load_transformation(object, semantics);
+            transformation = object->transformation;
+        }
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
 
@@ -808,12 +865,7 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 	return ret;
 }
 
-static
-void
-j_transformation_object_set_transformation(JTransformationObject* object, JTransformationType type, JTransformationMode mode, void* params)
-{
-    object->transformation = j_transformation_new(type, mode, params);
-}
+
 
 
 /**
@@ -848,6 +900,7 @@ j_transformation_object_new (gchar const* namespace, gchar const* name)
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
+    object->metadata = j_kv_new(namespace, name);
 
 	j_trace_leave(G_STRFUNC);
 
@@ -887,6 +940,7 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
+    object->metadata = j_kv_new(namespace, name);
 
 	j_trace_leave(G_STRFUNC);
 
@@ -977,7 +1031,23 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
 
 	j_trace_enter(G_STRFUNC, NULL);
 
+    // Set the transformation
     j_transformation_object_set_transformation(object, type, mode, params);
+
+    // Store transformation information on the KV server
+    // TODO delete
+
+    JBatch* kv_batch = j_batch_new(j_batch_get_semantics(batch));
+    
+    bson_t* metadata_bson = bson_new();
+    bson_append_int32(metadata_bson, "JTransformationType", -1, (int)type);
+    bson_append_int32(metadata_bson, "JTransformationMode", -1, (int)mode);
+    // TODO handle params struct
+
+    j_kv_put(object->metadata, metadata_bson, kv_batch);
+    j_batch_execute(kv_batch);
+    bson_free(metadata_bson);
+
 
 	operation = j_operation_new();
 	// FIXME key = index + namespace
