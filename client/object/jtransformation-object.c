@@ -808,6 +808,14 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 	return ret;
 }
 
+static
+void
+j_transformation_object_set_transformation(JTransformationObject* object, JTransformationType type, JTransformationMode mode, void* params)
+{
+    object->transformation = j_transformation_new(type, mode, params);
+}
+
+
 /**
  * Creates a new item.
  *
@@ -825,7 +833,7 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
  * \return A new item. Should be freed with j_transformation_object_unref().
  **/
 JTransformationObject*
-j_transformation_object_new (gchar const* namespace, gchar const* name, JTransformationType transformation_type, JTransformationMode transformation_mode)
+j_transformation_object_new (gchar const* namespace, gchar const* name)
 {
 	JConfiguration* configuration = j_configuration();
 	JTransformationObject* object;
@@ -840,7 +848,6 @@ j_transformation_object_new (gchar const* namespace, gchar const* name, JTransfo
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
-    object->transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
 
 	j_trace_leave(G_STRFUNC);
 
@@ -864,7 +871,7 @@ j_transformation_object_new (gchar const* namespace, gchar const* name, JTransfo
  * \return A new item. Should be freed with j_transformation_object_unref().
  **/
 JTransformationObject*
-j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name, JTransformationType transformation_type, JTransformationMode transformation_mode)
+j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name)
 {
 	JConfiguration* configuration = j_configuration();
 	JTransformationObject* object;
@@ -880,7 +887,6 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
-    object->transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
 
 	j_trace_leave(G_STRFUNC);
 
@@ -963,13 +969,15 @@ j_transformation_object_unref (JTransformationObject* item)
  * \return A new item. Should be freed with j_transformation_object_unref().
  **/
 void
-j_transformation_object_create (JTransformationObject* object, JBatch* batch)
+j_transformation_object_create (JTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, void* params)
 {
 	JOperation* operation;
 
 	g_return_if_fail(object != NULL);
 
 	j_trace_enter(G_STRFUNC, NULL);
+
+    j_transformation_object_set_transformation(object, type, mode, params);
 
 	operation = j_operation_new();
 	// FIXME key = index + namespace

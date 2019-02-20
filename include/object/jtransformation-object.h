@@ -37,16 +37,16 @@ struct JTransformationObject;
 
 typedef struct JTransformationObject JTransformationObject;
 
-JTransformationObject* j_transformation_object_new (gchar const*, gchar const*,JTransformationType transformation_type, JTransformationMode transformation_mode);
+JTransformationObject* j_transformation_object_new (gchar const*, gchar const*);
 
-JTransformationObject* j_transformation_object_new_for_index (guint32, gchar const*, gchar const*, JTransformationType transformation_type, JTransformationMode transformation_mode);
+JTransformationObject* j_transformation_object_new_for_index (guint32, gchar const*, gchar const*);
 JTransformationObject* j_transformation_object_ref (JTransformationObject*);
 
 void j_transformation_object_unref (JTransformationObject*);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformationObject, j_transformation_object_unref)
 
-void j_transformation_object_create (JTransformationObject*, JBatch*);
+void j_transformation_object_create (JTransformationObject*, JBatch*, JTransformationType, JTransformationMode, void*);
 void j_transformation_object_delete (JTransformationObject*, JBatch*);
 
 void j_transformation_object_read (JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
