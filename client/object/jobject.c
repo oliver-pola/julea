@@ -434,8 +434,8 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
             // Transform the read data if the object has a transformation set
             if(transformation != NULL)
             {
-                j_transformation_apply(transformation, &data, &length, &offset,
-					J_TRANSFORMATION_CALLER_CLIENT_READ);
+                // j_transformation_apply(transformation, &data, &length, &offset,
+				// 	J_TRANSFORMATION_CALLER_CLIENT_READ);
 				// data, length, offset must not change here
             }
 		}
@@ -507,8 +507,8 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
                 // Transform the read data if the object has a transformation set
                 if(transformation != NULL)
                 {
-                    j_transformation_apply(transformation, &data, &operation->read.length,
-						&operation->read.offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+                    // j_transformation_apply(transformation, &data, &operation->read.length,
+					// 	&operation->read.offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
 					// data, length, offset must not change here
                 }
 			}
@@ -615,8 +615,8 @@ j_object_write_exec (JList* operations, JSemantics* semantics)
         //Transform the data if necessary
         if(transformation != NULL)
         {
-            j_transformation_apply(transformation, &data, &length, &offset,
-				J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+            // j_transformation_apply(transformation, &data, &length, &offset,
+			// 	J_TRANSFORMATION_CALLER_CLIENT_WRITE);
 			// data, length, offset could have changed
             operation->write.data = data;
 			operation->write.length = length;

@@ -65,13 +65,13 @@ struct JTransformation
 /**
  * XOR with 1 for each bit
  */
-static void j_transformation_apply_xor (gpointer* input, gpointer* output,
+static void j_transformation_apply_xor (gpointer input, gpointer* output,
     guint64* length, guint64* offset)
 {
     guint8* in;
     guint8* out;
 
-    in = *input;
+    in = input;
     in += *offset;
 
     out = g_slice_alloc(*length);
@@ -87,7 +87,7 @@ static void j_transformation_apply_xor (gpointer* input, gpointer* output,
     *offset = 0;
 }
 
-static void j_transformation_apply_xor_inverse (gpointer* input, gpointer* output,
+static void j_transformation_apply_xor_inverse (gpointer input, gpointer* output,
     guint64* length, guint64* offset)
 {
     j_transformation_apply_xor(input, output, length, offset);
@@ -96,11 +96,11 @@ static void j_transformation_apply_xor_inverse (gpointer* input, gpointer* outpu
 /**
  * Simple run length encoding
  */
-static void j_transformation_apply_rle (gpointer* input, gpointer* output,
+static void j_transformation_apply_rle (gpointer input, gpointer* output,
     guint64* length, guint64* offset)
 {
     guint8 value, copies;
-    guint8* in = *input;
+    guint8* in = input;
     in += *offset; // probably offset 0 must be enforced
 
     if (*length > 0)
@@ -121,13 +121,13 @@ static void j_transformation_apply_rle (gpointer* input, gpointer* output,
     }
 }
 
-static void j_transformation_apply_rle_inverse (gpointer* input, gpointer* output,
+static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output,
     guint64* length, guint64* offset)
 {
     guint8 value, count;
     // guint8* buffer;
     // giunt8* buffer_pos;
-    guint8* in = *input;
+    guint8* in = input;
     in += *offset; // probably offset 0 must be enforced
 
     // TODO: get buffer
@@ -204,20 +204,27 @@ void j_transformation_unref (JTransformation* item)
  * Applies a transformation (inverse) on the data with length and offset.
  * This is done inplace (with an internal copy if necessary).
  **/
-void j_transformation_apply (JTransformation* trafo, gpointer* data,
-    guint64* length, guint64* offset, JTransformationCaller caller)
+void j_transformation_apply (JTransformation* trafo, gpointer input,
+    guint64 inlength, guint64 inoffset, gpointer* output,
+    guint64* outlength, guint64* outoffset, JTransformationCaller caller)
 {
     // Buffer for output of transformation, needs to be allocated by every method
     // because only there the size is known / estimated
     gpointer buffer;
+    guint64 length;
+    guint64 offset;
+    gboolean inverse;
 
-    gboolean inverse = FALSE;
+    length = inlength;
+    offset = inoffset;
+    inverse = FALSE;
 
     g_return_if_fail(trafo != NULL);
-    g_return_if_fail(data != NULL);
-    g_return_if_fail(length != NULL);
-    g_return_if_fail(offset != NULL);
-    g_return_if_fail(*data != NULL);
+    g_return_if_fail(input != NULL);
+    g_return_if_fail(output != NULL);
+    g_return_if_fail(outlength != NULL);
+    g_return_if_fail(outoffset != NULL);
+    g_return_if_fail(*output != NULL);
 
     // Decide who needs to do transform and who inverse transform
     switch (trafo->mode)
@@ -251,38 +258,49 @@ void j_transformation_apply (JTransformation* trafo, gpointer* data,
             return;
         case J_TRANSFORMATION_TYPE_XOR:
             if(inverse)
-                j_transformation_apply_xor_inverse(data, &buffer, length, offset);
+                j_transformation_apply_xor_inverse(input, &buffer, &length, &offset);
             else
-                j_transformation_apply_xor(data, &buffer, length, offset);
+                j_transformation_apply_xor(input, &buffer, &length, &offset);
             break;
         case J_TRANSFORMATION_TYPE_RLE:
             if(inverse)
-                j_transformation_apply_rle_inverse(data, &buffer, length, offset);
+                j_transformation_apply_rle_inverse(input, &buffer, &length, &offset);
             else
-                j_transformation_apply_rle(data, &buffer, length, offset);
+                j_transformation_apply_rle(input, &buffer, &length, &offset);
             break;
         default:
             return;
     }
 
-    // write needs this delayed free, read does free early
-    if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
-        caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+    // output buffer is always created by the method, but for read we have
+    // user app memory as output given, we need to copy the requested part
+    // and free the output buffer (cleanup does free the input buffer)
+    if ((caller == J_TRANSFORMATION_CALLER_CLIENT_READ) ||
+        (caller == J_TRANSFORMATION_CALLER_SERVER_READ))
     {
-        // The buffer becomes the data to transfer
         g_return_if_fail(buffer != NULL);
-        *data = buffer;
+        // TODO buffer can now be the whole tranformed object while output
+        // only wanted a small part of it
+        memcpy(*output, buffer, *outlength);
+        g_slice_free1(length, buffer);
     }
     else
     {
-        // TODO this only makes sense if size does not change
-        memcpy(*data, buffer, *length);
-        g_slice_free1(*length, buffer);
+        g_return_if_fail(buffer != NULL);
+        *output = buffer;
+        *outlength = length;
+        *outoffset = offset;
     }
 }
 
 /**
  * Cleans up after j_transformation_apply is done, frees temp buffer
+ *
+ * For write operations this needs to be called in write_free() with the data
+ * stored in the operation struct, after the data is transfered.
+ * For read operations this can be called directly after the transformation was
+ * applied and the parameters must be the temp buffer prepared by
+ * prep_read_buffer()
  **/
 void j_transformation_cleanup (JTransformation* trafo, gpointer data,
     guint64 length, guint64 offset, JTransformationCaller caller)
@@ -292,12 +310,32 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
 
     g_return_if_fail(data != NULL);
 
-    // write needs this delayed free, read does free early
+    // write always needs a temp buffer to not interfer with user app memory
     if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
         caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
     {
         g_slice_free1(length, data);
     }
+    // read only needs a buffer if transformation can't be done inplace
+    else if (trafo->changes_size || !trafo->partial_edit)
+    {
+        g_slice_free1(length, data);
+    }
+}
+
+void j_transformation_prep_read_buffer (JTransformation* trafo, gpointer data,
+    guint64 length, guint64 offset, gpointer* buffer, guint64* buflength,
+    guint64* bufoffs, JTransformationCaller caller)
+{
+    // TODO
+    (void)trafo; // unused
+    (void)data; // unused
+    (void)length; // unused
+    (void)offset; // unused
+    (void)buffer; // unused
+    (void)buflength; // unused
+    (void)bufoffs; // unused
+    (void)caller; // unused
 }
 
 /**

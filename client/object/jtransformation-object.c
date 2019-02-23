@@ -154,12 +154,6 @@ j_transformation_object_read_free (gpointer data)
 
 	j_transformation_object_unref(operation->read.object);
 
-	if(operation->read.object->transformation != NULL)
-    {
-		j_transformation_cleanup(operation->read.object->transformation,
-			operation->read.data, operation->read.length, operation->read.offset,
-			J_TRANSFORMATION_CALLER_CLIENT_READ);
-    }
 	g_slice_free(JTransformationObjectOperation, operation);
 }
 
@@ -380,7 +374,7 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
 
     j_kv_get(object->metadata, metadata_bson, kv_batch);
     j_batch_execute(kv_batch);
-    
+
     bson_iter_t iter;
     if(bson_iter_init(&iter, metadata_bson))
     {
@@ -479,17 +473,36 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 		if (object_backend != NULL)
 		{
+			gpointer buffer;
+			guint64 buflength;
+		    guint64 bufoffs;
+
 			guint64 nbytes = 0;
 
-			ret = j_backend_object_read(object_backend, object_handle, data, length, offset, &nbytes) && ret;
+			// default is to use target memory directly
+			buffer = data;
+			buflength = length;
+			bufoffs = offset;
+
+			// with transformations we may need to read more ore less data to temp buffer
+			if(transformation != NULL)
+            {
+				j_transformation_prep_read_buffer(transformation, data, length,
+					offset, &buffer, &buflength, &bufoffs,
+					J_TRANSFORMATION_CALLER_CLIENT_READ);
+			}
+
+			ret = j_backend_object_read(object_backend, object_handle, buffer, buflength, bufoffs, &nbytes) && ret;
 			j_helper_atomic_add(bytes_read, nbytes);
 
             // Transform the read data if the object has a transformation set
             if(transformation != NULL)
             {
-                j_transformation_apply(transformation, &data, &length, &offset,
+                j_transformation_apply(transformation, buffer, buflength, bufoffs,
+					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+				// TODO fix bytes_read
+				j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
 					J_TRANSFORMATION_CALLER_CLIENT_READ);
-				// data, length, offset must not change here
             }
 		}
 		else
@@ -540,6 +553,10 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 			for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
 			{
+				gpointer buffer;
+				guint64 buflength;
+			    guint64 bufoffs;
+
 				JTransformationObjectOperation* operation = j_list_iterator_get(it);
 				gpointer data = operation->read.data;
 				guint64* bytes_read = operation->read.bytes_read;
@@ -549,20 +566,37 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				nbytes = j_message_get_8(reply);
 				j_helper_atomic_add(bytes_read, nbytes);
 
+				// default is to use target memory directly
+				buffer = data;
+				buflength = operation->read.length;
+				bufoffs = operation->read.offset;
+
+				// with transformations we may need to read more ore less data to temp buffer
+				if(transformation != NULL)
+	            {
+					j_transformation_prep_read_buffer(transformation, data, operation->read.length,
+						operation->read.offset, &buffer, &buflength, &bufoffs,
+						J_TRANSFORMATION_CALLER_CLIENT_READ);
+				}
+
 				if (nbytes > 0)
 				{
 					GInputStream* input;
 
+					// TODO how to adopt to different buffer size here?
 					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
-					g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
+					g_input_stream_read_all(input, buffer, nbytes, NULL, NULL, NULL);
 				}
 
                 // Transform the read data if the object has a transformation set
                 if(transformation != NULL)
                 {
-                    j_transformation_apply(transformation, &data, &operation->read.length,
-						&operation->read.offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
-					// data, length, offset must not change here
+                    j_transformation_apply(transformation, buffer, buflength, bufoffs,
+						&data, &operation->read.length, &operation->read.offset,
+						J_TRANSFORMATION_CALLER_CLIENT_READ);
+					// TODO fix bytes_read
+					j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
+						J_TRANSFORMATION_CALLER_CLIENT_READ);
                 }
 			}
 
@@ -673,8 +707,8 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         //Transform the data if necessary
         if(transformation != NULL)
         {
-            j_transformation_apply(transformation, &data, &length, &offset,
-				J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+            j_transformation_apply(transformation, data, length, offset,
+				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
 			// data, length, offset could have changed
             operation->write.data = data;
 			operation->write.length = length;
@@ -1038,7 +1072,7 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
     // TODO delete
 
     JBatch* kv_batch = j_batch_new(j_batch_get_semantics(batch));
-    
+
     bson_t* metadata_bson = bson_new();
     bson_append_int32(metadata_bson, "JTransformationType", -1, (int)type);
     bson_append_int32(metadata_bson, "JTransformationMode", -1, (int)mode);

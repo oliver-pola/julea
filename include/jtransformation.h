@@ -73,10 +73,12 @@ JTransformation* j_transformation_new (JTransformationType, JTransformationMode,
 JTransformation* j_transformation_ref (JTransformation*);
 void j_transformation_unref (JTransformation*);
 
-void j_transformation_apply (JTransformation*, gpointer*, guint64*, guint64*,
-    JTransformationCaller);
+void j_transformation_apply (JTransformation*, gpointer, guint64, guint64,
+    gpointer*, guint64*, guint64*, JTransformationCaller);
 void j_transformation_cleanup (JTransformation*, gpointer, guint64, guint64,
     JTransformationCaller);
+void j_transformation_prep_read_buffer (JTransformation*, gpointer, guint64, guint64,
+    gpointer*, guint64*, guint64*, JTransformationCaller);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformation, j_transformation_unref)
 
