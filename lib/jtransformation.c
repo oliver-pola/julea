@@ -71,8 +71,9 @@ static void j_transformation_apply_xor (gpointer input, gpointer* output,
     guint8* in;
     guint8* out;
 
+    (void)offset; // unused
+
     in = input;
-    in += *offset;
 
     out = g_slice_alloc(*length);
 
@@ -82,9 +83,6 @@ static void j_transformation_apply_xor (gpointer input, gpointer* output,
     }
 
     *output = out;
-
-    // Buffer is only of size = length, so offset within buffer is now 0
-    *offset = 0;
 }
 
 static void j_transformation_apply_xor_inverse (gpointer input, gpointer* output,
@@ -327,15 +325,19 @@ void j_transformation_prep_read_buffer (JTransformation* trafo, gpointer data,
     guint64 length, guint64 offset, gpointer* buffer, guint64* buflength,
     guint64* bufoffs, JTransformationCaller caller)
 {
-    // TODO
-    (void)trafo; // unused
-    (void)data; // unused
-    (void)length; // unused
-    (void)offset; // unused
-    (void)buffer; // unused
-    (void)buflength; // unused
-    (void)bufoffs; // unused
     (void)caller; // unused
+
+    // read only needs a buffer if transformation can't be done inplace
+    if (trafo->changes_size || !trafo->partial_edit)
+    {
+        // TODO
+    }
+    else
+    {
+        *buffer = data;
+        *buflength = length;
+        *bufoffs = offset;
+    }
 }
 
 /**
