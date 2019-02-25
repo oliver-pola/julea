@@ -288,7 +288,6 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
     g_return_if_fail(output != NULL);
     g_return_if_fail(outlength != NULL);
     g_return_if_fail(outoffset != NULL);
-    g_return_if_fail(*output != NULL);
 
     // Decide who needs to do transform and who inverse transform
     switch (trafo->mode)
@@ -343,6 +342,7 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
         (caller == J_TRANSFORMATION_CALLER_SERVER_READ))
     {
         g_return_if_fail(buffer != NULL);
+        g_return_if_fail(*output != NULL);
         // TODO buffer can now be the whole tranformed object while output
         // only wanted a small part of it
         g_return_if_fail(length >= *outlength);
@@ -397,7 +397,16 @@ void j_transformation_prep_read_buffer (JTransformation* trafo, gpointer data,
     // read only needs a buffer if transformation can't be done inplace
     if (trafo->changes_size || !trafo->partial_edit)
     {
-        // TODO
+        // TODO evaluate proper buffer size
+        // but data is not available yet
+        // maybe store original & transformed size anywhere and get it here
+
+        // TODO workaround to test RLE: twice the length fits
+        // at least if length is the full object
+        *buflength = 2 * length;
+
+        *buffer = g_slice_alloc(*buflength);
+        *bufoffs = 0;
     }
     else
     {

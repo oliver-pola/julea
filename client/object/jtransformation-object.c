@@ -709,6 +709,9 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         {
             j_transformation_apply(transformation, data, length, offset,
 				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+			// TODO fake the "missing" bytes_written
+			// without this the real written bytes are returned (debug)
+			// j_helper_atomic_add(bytes_written, operation->write.length - length);
 			// data, length, offset could have changed
             operation->write.data = data;
 			operation->write.length = length;
