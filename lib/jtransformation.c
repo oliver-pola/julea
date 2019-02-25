@@ -97,15 +97,23 @@ static void j_transformation_apply_xor_inverse (gpointer input, gpointer* output
 static void j_transformation_apply_rle (gpointer input, gpointer* output,
     guint64* length, guint64* offset)
 {
+    guint8* in;
+    guint8* out;
     guint8 value, copies;
-    guint8* in = input;
-    in += *offset; // probably offset 0 must be enforced
+    guint64 outpos;
 
+    in = input;
+
+    // dry run to get the size of output buffer
+    // alternative:
+    // temp allocate 2*length and memcpy into final buffer with exact size
+    outpos = 0;
     if (*length > 0)
     {
-        copies = 0; // this means count = 1, storing a 0 makes no sense
+        copies = 0;
         value = in[0];
-        for (guint i = 1; i < *length; i++)
+
+        for (guint64 i = 1; i < *length; i++)
         {
             if (in[i] == value && copies < 255)
             {
@@ -113,31 +121,89 @@ static void j_transformation_apply_rle (gpointer input, gpointer* output,
             }
             else
             {
-                // TODO: write precount and value to some other buffer
+                outpos += 2;
             }
         }
+        outpos += 2;
     }
+
+    // allocate buffer that fits to transformed data
+    out = g_slice_alloc(outpos);
+
+    // run again and store the transform
+    outpos = 0;
+    if (*length > 0)
+    {
+        copies = 0; // this means count = 1, storing a 0 makes no sense
+        value = in[0];
+
+        for (guint64 i = 1; i < *length; i++)
+        {
+            if (in[i] == value && copies < 255)
+            {
+                copies++;
+            }
+            else
+            {
+                // found a new value, store the last one
+                out[outpos] = copies;
+                out[outpos+1] = value;
+                outpos += 2;
+
+                copies = 0;
+                value = in[i];
+            }
+        }
+        // write last sequence
+        out[outpos] = copies;
+        out[outpos+1] = value;
+        outpos += 2;
+    }
+
+    *output = out;
+    *length = outpos;
+
+    // in the object we start reading/writing at offset 0 in any case
+    *offset = 0;
 }
 
 static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output,
     guint64* length, guint64* offset)
 {
-    guint8 value, count;
-    // guint8* buffer;
-    // giunt8* buffer_pos;
-    guint8* in = input;
-    in += *offset; // probably offset 0 must be enforced
+    guint8* in;
+    guint8* out;
+    guint8 value;
+    guint16 count;
+    guint64 outpos;
 
-    // TODO: get buffer
-    // buffer_pos = buffer;
+    in = input;
 
-    for (guint i = 1; i < *length; i += 2)
+    // dry run to get the size of output buffer
+    outpos = 0;
+    for (guint64 i = 1; i < *length; i += 2)
     {
-        count = in[i - 1] + 1;
-        value = in[i];
-        // TODO: memset(buffer_pos, value, copies + 1);
-        // buffer_pos += count;
+        count = (guint16)in[i - 1] + 1;
+        outpos += count;
     }
+
+    // allocate buffer that fits to transformed data
+    out = g_slice_alloc(outpos);
+
+    // run again and store the transform
+    outpos = 0;
+    for (guint64 i = 1; i < *length; i += 2)
+    {
+        count = (guint16)in[i - 1] + 1; // count = copies + 1
+        value = in[i];
+        memset(out + outpos, value, count);
+        outpos += count;
+    }
+
+    *output = out;
+    *length = outpos;
+
+    // in the object we start reading/writing at offset 0 in any case
+    *offset = 0;
 }
 
 
@@ -279,6 +345,7 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
         g_return_if_fail(buffer != NULL);
         // TODO buffer can now be the whole tranformed object while output
         // only wanted a small part of it
+        g_return_if_fail(length >= *outlength);
         memcpy(*output, buffer, *outlength);
         g_slice_free1(length, buffer);
     }
