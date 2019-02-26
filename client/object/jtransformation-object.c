@@ -496,7 +496,9 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
             {
                 j_transformation_apply(transformation, buffer, buflength, bufoffs,
 					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
-				// TODO fix bytes_read
+				// fake the "missing" bytes_read
+				// without this the real read bytes are returned (debug)
+				// TODO j_helper_atomic_add(bytes_read, length - buflength);
             }
 		}
 		else
@@ -603,7 +605,10 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
                     j_transformation_apply(transformation, buffer, buflength, bufoffs,
 						&data, &operation->read.length, &operation->read.offset,
 						J_TRANSFORMATION_CALLER_CLIENT_READ);
-					// TODO fix bytes_read
+					// fake the "missing" bytes_read
+					// without this the real read bytes are returned (debug)
+					// TODO j_helper_atomic_add(bytes_read, operation->read.length - buflength);
+
 					j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
 						J_TRANSFORMATION_CALLER_CLIENT_READ);
                 }
@@ -718,9 +723,10 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         {
             j_transformation_apply(transformation, data, length, offset,
 				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
-			// TODO fake the "missing" bytes_written
+			// fake the "missing" bytes_written
 			// without this the real written bytes are returned (debug)
-			// j_helper_atomic_add(bytes_written, operation->write.length - length);
+			// TODO j_helper_atomic_add(bytes_written, operation->write.length - length);
+
 			// data, length, offset could have changed
             operation->write.data = data;
 			operation->write.length = length;
