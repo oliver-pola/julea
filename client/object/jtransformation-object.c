@@ -462,6 +462,11 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->read.offset;
 		guint64* bytes_read = operation->read.bytes_read;
 
+		// default is to use target memory directly
+		gpointer buffer = data;
+		guint64 buflength = length;
+		guint64 bufoffs = offset;
+
         transformation = object->transformation;
         if(transformation == NULL)
         {
@@ -471,26 +476,17 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
+		// with transformations we may need to read more ore less data to temp buffer
+		if(transformation != NULL)
+		{
+			j_transformation_prep_read_buffer(transformation, data, length,
+				offset, &buffer, &buflength, &bufoffs,
+				J_TRANSFORMATION_CALLER_CLIENT_READ);
+		}
+
 		if (object_backend != NULL)
 		{
-			gpointer buffer;
-			guint64 buflength;
-		    guint64 bufoffs;
-
 			guint64 nbytes = 0;
-
-			// default is to use target memory directly
-			buffer = data;
-			buflength = length;
-			bufoffs = offset;
-
-			// with transformations we may need to read more ore less data to temp buffer
-			if(transformation != NULL)
-            {
-				j_transformation_prep_read_buffer(transformation, data, length,
-					offset, &buffer, &buflength, &bufoffs,
-					J_TRANSFORMATION_CALLER_CLIENT_READ);
-			}
 
 			ret = j_backend_object_read(object_backend, object_handle, buffer, buflength, bufoffs, &nbytes) && ret;
 			j_helper_atomic_add(bytes_read, nbytes);
@@ -501,15 +497,29 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
                 j_transformation_apply(transformation, buffer, buflength, bufoffs,
 					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
 				// TODO fix bytes_read
-				j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
-					J_TRANSFORMATION_CALLER_CLIENT_READ);
             }
 		}
 		else
 		{
+			// TODO here we just use the earlier calculated buflength and bufoffs
+			// from j_transformation_prep_read_buffer()
+			// but we do not use the allocated buffer (get's instantly freed
+			// in next block).
+			// Later there is another j_transformation_prep_read_buffer(),
+			// where in the same case of object_backend == NULL the g_input_stream
+			// branch will use the message data from here.
+			// In that case the j_transformation_prep_read_buffer() is just used
+			// to allocate the buffer and setting of buflength and bufoffs is
+			// ignored. Maybe those two effects should be split into two methods?
 			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
-			j_message_append_8(message, &length);
-			j_message_append_8(message, &offset);
+			j_message_append_8(message, &buflength);
+			j_message_append_8(message, &bufoffs);
+		}
+
+		if(transformation != NULL)
+		{
+			j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
+				J_TRANSFORMATION_CALLER_CLIENT_READ);
 		}
 
 		j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
@@ -583,7 +593,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				{
 					GInputStream* input;
 
-					// TODO how to adopt to different buffer size here?
 					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
 					g_input_stream_read_all(input, buffer, nbytes, NULL, NULL, NULL);
 				}
