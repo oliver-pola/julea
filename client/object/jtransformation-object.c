@@ -402,6 +402,10 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	gpointer object_handle;
     JTransformation* transformation = NULL;
 
+	// get object size with separate message in case without object backend
+	g_autoptr(JMessage) message_status = NULL;
+	guint object_size;
+
 	// FIXME
 	//JLock* lock = NULL;
 
@@ -432,6 +436,16 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	if (object_backend != NULL)
 	{
 		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+
+		if(transformation != NULL)
+		{
+			// Get the object size, see procedure in _status_exec()
+			// First thought: this belongs into JTransformation, but there we don't
+			// have what we have here already: the object, semantics, ...
+			// TODO size only needed in case of (trafo->changes_size || !trafo->partial_edit)
+			gint64 modification_time; // recieve and ignore
+			ret = j_backend_object_status(object_backend, object_handle, &modification_time, &object_size) && ret;
+		}
 	}
 	else
 	{
@@ -445,6 +459,33 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
+
+		if(transformation != NULL)
+		{
+			// Get the object size, see procedure in _status_exec()
+			// here by a separate status message
+			message_status = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
+			j_message_set_safety(message_status, semantics);
+			j_message_append_n(message_status, object->namespace, namespace_len);
+
+			j_message_add_operation(message_status, name_len);
+			j_message_append_n(message_status, object->name, name_len);
+
+			g_autoptr(JMessage) reply = NULL;
+			GSocketConnection* object_connection;
+
+			object_connection = j_connection_pool_pop_object(object->index);
+			j_message_send(message_status, object_connection);
+
+			reply = j_message_new_reply(message_status);
+			j_message_receive(reply, object_connection);
+
+			gint64 modification_time; // recieve and ignore
+			modification_time = j_message_get_8(reply);
+			object_size = j_message_get_8(reply);
+
+			j_connection_pool_push_object(object->index, object_connection);
+		}
 	}
 
 	/*
@@ -480,7 +521,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		if(transformation != NULL)
 		{
 			j_transformation_prep_read_buffer(transformation, data, length,
-				offset, &buffer, &buflength, &bufoffs,
+				offset, &buffer, &buflength, &bufoffs, object_size,
 				J_TRANSFORMATION_CALLER_CLIENT_READ);
 		}
 
@@ -587,7 +628,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				if(transformation != NULL)
 	            {
 					j_transformation_prep_read_buffer(transformation, data, operation->read.length,
-						operation->read.offset, &buffer, &buflength, &bufoffs,
+						operation->read.offset, &buffer, &buflength, &bufoffs, object_size,
 						J_TRANSFORMATION_CALLER_CLIENT_READ);
 				}
 

@@ -345,8 +345,8 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
         g_return_if_fail(*output != NULL);
         // TODO buffer can now be the whole tranformed object while output
         // only wanted a small part of it
-        g_return_if_fail(length >= *outlength);
-        memcpy(*output, buffer, *outlength);
+        g_return_if_fail(length - offset + *outoffset >= *outlength);
+        memcpy(*output, (gchar*)buffer - offset + *outoffset, *outlength);
         g_slice_free1(length, buffer);
     }
     else
@@ -390,7 +390,7 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
 
 void j_transformation_prep_read_buffer (JTransformation* trafo, gpointer data,
     guint64 length, guint64 offset, gpointer* buffer, guint64* buflength,
-    guint64* bufoffs, JTransformationCaller caller)
+    guint64* bufoffs, guint64 object_size, JTransformationCaller caller)
 {
     (void)caller; // unused
 
@@ -401,9 +401,8 @@ void j_transformation_prep_read_buffer (JTransformation* trafo, gpointer data,
         // but data is not available yet
         // maybe store original & transformed size anywhere and get it here
 
-        // TODO workaround to test RLE: twice the length fits
-        // at least if length is the full object
-        *buflength = 2 * length;
+        // TODO workaround to test RLE: twice the object size is enough
+        *buflength = 2 * object_size;
 
         *buffer = g_slice_alloc(*buflength);
         *bufoffs = 0;
