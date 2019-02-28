@@ -47,14 +47,9 @@ struct JTransformation
     JTransformationMode mode;
 
     /**
-	 * Whether the transformation changes data size.
+	 * Whether parts of data can be read or written without knowing the neighbourhood.
 	 **/
-	gboolean changes_size;
-
-    /**
-	 * Whether parts of data can be edited without considering the neighbourhood.
-	 **/
-	gboolean partial_edit;
+	gboolean partial_access;
 
     /**
 	 * The reference count.
@@ -206,6 +201,58 @@ static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output
     *offset = 0;
 }
 
+static gboolean j_transformation_here(JTransformation* trafo,
+    JTransformationCaller caller)
+{
+    // Decide who needs to do transform in given mode
+    switch (trafo->mode)
+    {
+        default:
+        case J_TRANSFORMATION_MODE_CLIENT:
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE)
+                return TRUE;
+            break;
+        case J_TRANSFORMATION_MODE_TRANSPORT:
+            return TRUE;
+        case J_TRANSFORMATION_MODE_SERVER:
+            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+                return TRUE;
+            break;
+    }
+    return FALSE;
+}
+
+static gboolean j_transformation_inverse(JTransformation* trafo,
+    JTransformationCaller caller)
+{
+    // Decide who needs to do transform and who inverse transform
+    switch (trafo->mode)
+    {
+        default:
+        case J_TRANSFORMATION_MODE_CLIENT:
+            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+                return FALSE;
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ)
+                return TRUE;
+            break;
+        case J_TRANSFORMATION_MODE_TRANSPORT:
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+                return TRUE;
+            break;
+        case J_TRANSFORMATION_MODE_SERVER:
+            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE)
+                return FALSE;
+            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ)
+                return TRUE;
+            break;
+    }
+    return FALSE;
+}
 
 /**
  * Get a JTransformation object from type (and params)
@@ -226,20 +273,16 @@ JTransformation* j_transformation_new (JTransformationType type,
     switch (type)
     {
         case J_TRANSFORMATION_TYPE_NONE:
-            trafo->changes_size = FALSE;
-            trafo->partial_edit = TRUE;
+            trafo->partial_access = TRUE;
             break;
         case J_TRANSFORMATION_TYPE_XOR:
-            trafo->changes_size = FALSE;
-            trafo->partial_edit = TRUE;
+            trafo->partial_access = TRUE;
             break;
         case J_TRANSFORMATION_TYPE_RLE:
-            trafo->changes_size = TRUE;
-            trafo->partial_edit = FALSE;
+            trafo->partial_access = FALSE;
             break;
         default:
-            trafo->changes_size = FALSE;
-            trafo->partial_edit = TRUE;
+            trafo->partial_access = TRUE;
     }
 
     return trafo;
@@ -281,7 +324,6 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
 
     length = inlength;
     offset = inoffset;
-    inverse = FALSE;
 
     g_return_if_fail(trafo != NULL);
     g_return_if_fail(input != NULL);
@@ -289,31 +331,16 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
     g_return_if_fail(outlength != NULL);
     g_return_if_fail(outoffset != NULL);
 
-    // Decide who needs to do transform and who inverse transform
-    switch (trafo->mode)
+    if (!j_transformation_here(trafo, caller))
     {
-        default:
-        case J_TRANSFORMATION_MODE_CLIENT:
-            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
-                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
-                return;
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ)
-                inverse = TRUE;
-            break;
-        case J_TRANSFORMATION_MODE_TRANSPORT:
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
-                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
-                inverse = TRUE;
-            break;
-        case J_TRANSFORMATION_MODE_SERVER:
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
-                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE)
-                return;
-            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ)
-                inverse = TRUE;
-            break;
+        // nothing to do here, but make sure output is usable
+        *output = input;
+        *outlength = inlength;
+        *outoffset = inoffset;
+        return;
     }
 
+    inverse = j_transformation_inverse(trafo, caller);
 
     switch (trafo->type)
     {
@@ -338,12 +365,12 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
     // output buffer is always created by the method, but for read we have
     // user app memory as output given, we need to copy the requested part
     // and free the output buffer (cleanup does free the input buffer)
-    if ((caller == J_TRANSFORMATION_CALLER_CLIENT_READ) ||
-        (caller == J_TRANSFORMATION_CALLER_SERVER_READ))
+    if ((caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+        caller == J_TRANSFORMATION_CALLER_SERVER_READ) && *output != NULL)
     {
         g_return_if_fail(buffer != NULL);
-        g_return_if_fail(*output != NULL);
-        // TODO buffer can now be the whole tranformed object while output
+        // g_return_if_fail(*output != NULL);
+        // buffer can now be the whole tranformed object while output
         // only wanted a small part of it
         g_return_if_fail(length - offset + *outoffset >= *outlength);
         memcpy(*output, (gchar*)buffer - offset + *outoffset, *outlength);
@@ -370,10 +397,12 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
 void j_transformation_cleanup (JTransformation* trafo, gpointer data,
     guint64 length, guint64 offset, JTransformationCaller caller)
 {
-    (void)trafo; // unused
     (void)offset; // unused
 
     g_return_if_fail(data != NULL);
+
+    if (!j_transformation_here(trafo, caller))
+        return;
 
     // write always needs a temp buffer to not interfer with user app memory
     if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
@@ -382,37 +411,21 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
         g_slice_free1(length, data);
     }
     // read only needs a buffer if transformation can't be done inplace
-    else if (trafo->changes_size || !trafo->partial_edit)
+    else if (!trafo->partial_access)
     {
         g_slice_free1(length, data);
     }
 }
 
-void j_transformation_prep_read_buffer (JTransformation* trafo, gpointer data,
-    guint64 length, guint64 offset, gpointer* buffer, guint64* buflength,
-    guint64* bufoffs, guint64 object_size, JTransformationCaller caller)
+gboolean j_transformation_need_whole_object (JTransformation* trafo,
+    JTransformationCaller caller)
 {
-    (void)caller; // unused
-
-    // read only needs a buffer if transformation can't be done inplace
-    if (trafo->changes_size || !trafo->partial_edit)
-    {
-        // TODO evaluate proper buffer size
-        // but data is not available yet
-        // maybe store original & transformed size anywhere and get it here
-
-        // TODO workaround to test RLE: twice the object size is enough
-        *buflength = 2 * object_size;
-
-        *buffer = g_slice_alloc(*buflength);
-        *bufoffs = 0;
-    }
+    if (trafo == NULL)
+        return FALSE;
+    else if (!j_transformation_here(trafo, caller))
+        return FALSE;
     else
-    {
-        *buffer = data;
-        *buflength = length;
-        *bufoffs = offset;
-    }
+        return !trafo->partial_access;
 }
 
 /**

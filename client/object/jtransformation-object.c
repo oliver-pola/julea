@@ -389,6 +389,173 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
     }
     return ret;
 }
+
+static
+gboolean
+j_transformation_object_read_all (JTransformationObject* object,
+	gpointer* data, guint64* length, JSemantics* semantics)
+{
+	gboolean ret = TRUE;
+
+	JBackend* object_backend;
+	g_autoptr(JMessage) message = NULL;
+	gpointer object_handle;
+
+	// get object size with separate message in case without object backend
+	g_autoptr(JMessage) message_status = NULL;
+	guint64 object_size;
+
+	// FIXME
+	//JLock* lock = NULL;
+
+	g_return_val_if_fail(object != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	object_backend = j_object_backend();
+
+	if (object_backend != NULL)
+	{
+		gint64 modification_time; // recieve and ignore
+		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+		// Get the object size, see procedure in _status_exec()
+		ret = j_backend_object_status(object_backend, object_handle, &modification_time, &object_size) && ret;
+	}
+	else
+	{
+		gsize name_len;
+		gsize namespace_len;
+		g_autoptr(JMessage) reply = NULL;
+		GSocketConnection* object_connection;
+
+		namespace_len = strlen(object->namespace) + 1;
+		name_len = strlen(object->name) + 1;
+
+		// Prepare the message for data
+		message = j_message_new(J_MESSAGE_OBJECT_READ, namespace_len + name_len);
+		j_message_set_safety(message, semantics);
+		j_message_append_n(message, object->namespace, namespace_len);
+		j_message_append_n(message, object->name, name_len);
+
+		// Get the object size, see procedure in _status_exec()
+		// We need the replied object_size to allocate memory
+		// and further construct the data message
+		message_status = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
+		j_message_set_safety(message_status, semantics);
+		j_message_append_n(message_status, object->namespace, namespace_len);
+
+		j_message_add_operation(message_status, name_len);
+		j_message_append_n(message_status, object->name, name_len);
+
+		object_connection = j_connection_pool_pop_object(object->index);
+		j_message_send(message_status, object_connection);
+
+		reply = j_message_new_reply(message_status);
+		j_message_receive(reply, object_connection);
+
+		// gint64 modification_time; // recieve and ignore
+		// modification_time =
+		j_message_get_8(reply);
+		object_size = j_message_get_8(reply);
+
+		j_connection_pool_push_object(object->index, object_connection);
+	}
+
+	/*
+	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
+	{
+		lock = j_lock_new("item", path);
+	}
+	*/
+
+	j_trace_file_begin(object->name, J_TRACE_FILE_READ);
+
+	// allocate memory for whole object
+	*length = object_size;
+	*data = g_slice_alloc(object_size);
+
+	if (object_backend != NULL)
+	{
+		guint64 nbytes = 0;
+		ret = j_backend_object_read(object_backend, object_handle, *data, *length, 0, &nbytes) && ret;
+	}
+	else
+	{
+		guint64 offset = 0;
+		j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+		j_message_append_8(message, length);
+		j_message_append_8(message, &offset);
+	}
+
+	j_trace_file_end(object->name, J_TRACE_FILE_READ, *length, 0);
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_close(object_backend, object_handle) && ret;
+	}
+	else
+	{
+		g_autoptr(JMessage) reply = NULL;
+		GSocketConnection* object_connection;
+		guint32 operations_done;
+		guint32 operation_count;
+
+		object_connection = j_connection_pool_pop_object(object->index);
+		j_message_send(message, object_connection);
+
+		reply = j_message_new_reply(message);
+
+		operations_done = 0;
+		operation_count = j_message_get_count(message);
+
+		/**
+		 * This extra loop is necessary because the server might send multiple
+		 * replies per message. The same reply object can be used to receive
+		 * multiple times.
+		 */
+		while (operations_done < operation_count)
+		{
+			guint32 reply_operation_count;
+
+			j_message_receive(reply, object_connection);
+
+			reply_operation_count = j_message_get_count(reply);
+
+			for (guint i = 0; i < reply_operation_count; i++)
+			{
+				guint64 nbytes;
+				nbytes = j_message_get_8(reply);
+
+				if (nbytes > 0)
+				{
+					GInputStream* input;
+
+					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
+					g_input_stream_read_all(input, *data, nbytes, NULL, NULL, NULL);
+				}
+
+			}
+			operations_done += reply_operation_count;
+		}
+		j_connection_pool_push_object(object->index, object_connection);
+	}
+
+	/*
+	if (lock != NULL)
+	{
+		// FIXME busy wait
+		while (!j_lock_acquire(lock));
+
+		j_lock_free(lock);
+	}
+	*/
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+
 static
 gboolean
 j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
@@ -401,10 +568,9 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
     JTransformationObject* object;
 	gpointer object_handle;
     JTransformation* transformation = NULL;
-
-	// get object size with separate message in case without object backend
-	g_autoptr(JMessage) message_status = NULL;
-	guint object_size;
+	// for complex transformations we will need to load the whole object
+	guint8* object_data;
+	guint64 object_size;
 
 	// FIXME
 	//JLock* lock = NULL;
@@ -433,19 +599,26 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	it = j_list_iterator_new(operations);
 	object_backend = j_object_backend();
 
-	if (object_backend != NULL)
+	if (j_transformation_need_whole_object(transformation,
+		J_TRANSFORMATION_CALLER_CLIENT_READ))
+	{
+		guint64 buflength, bufoffset;
+		gpointer buffer = NULL;
+		j_transformation_object_read_all(object, (gpointer*)&object_data, &object_size, semantics);
+		// well, usually client read already has memory allocated that fits the request
+		// but here we don't know the whole size after transformation
+		// TODO as a workaround convention _apply() will hand out the just created buffer
+		// that perfectly fits, if we provide NULL as output buffer
+		j_transformation_apply(transformation, object_data, object_size, 0,
+			&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+		// now we have the original data in buffer and don't need the recieved version anymore
+		g_slice_free1(object_size, object_data);
+		object_data = buffer;
+		object_size = buflength;
+	}
+	else if (object_backend != NULL)
 	{
 		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
-
-		if(transformation != NULL)
-		{
-			// Get the object size, see procedure in _status_exec()
-			// First thought: this belongs into JTransformation, but there we don't
-			// have what we have here already: the object, semantics, ...
-			// TODO size only needed in case of (trafo->changes_size || !trafo->partial_edit)
-			gint64 modification_time; // recieve and ignore
-			ret = j_backend_object_status(object_backend, object_handle, &modification_time, &object_size) && ret;
-		}
 	}
 	else
 	{
@@ -459,33 +632,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
-
-		if(transformation != NULL)
-		{
-			// Get the object size, see procedure in _status_exec()
-			// here by a separate status message
-			message_status = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
-			j_message_set_safety(message_status, semantics);
-			j_message_append_n(message_status, object->namespace, namespace_len);
-
-			j_message_add_operation(message_status, name_len);
-			j_message_append_n(message_status, object->name, name_len);
-
-			g_autoptr(JMessage) reply = NULL;
-			GSocketConnection* object_connection;
-
-			object_connection = j_connection_pool_pop_object(object->index);
-			j_message_send(message_status, object_connection);
-
-			reply = j_message_new_reply(message_status);
-			j_message_receive(reply, object_connection);
-
-			gint64 modification_time; // recieve and ignore
-			modification_time = j_message_get_8(reply);
-			object_size = j_message_get_8(reply);
-
-			j_connection_pool_push_object(object->index, object_connection);
-		}
 	}
 
 	/*
@@ -503,11 +649,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->read.offset;
 		guint64* bytes_read = operation->read.bytes_read;
 
-		// default is to use target memory directly
-		gpointer buffer = data;
-		guint64 buflength = length;
-		guint64 bufoffs = offset;
-
+		// TODO why is this repeated?
         transformation = object->transformation;
         if(transformation == NULL)
         {
@@ -517,52 +659,34 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
-		// with transformations we may need to read more ore less data to temp buffer
-		if(transformation != NULL)
+		if (j_transformation_need_whole_object(transformation,
+			J_TRANSFORMATION_CALLER_CLIENT_READ))
 		{
-			j_transformation_prep_read_buffer(transformation, data, length,
-				offset, &buffer, &buflength, &bufoffs, object_size,
-				J_TRANSFORMATION_CALLER_CLIENT_READ);
+			// Apply read operations in-memory
+			memcpy(data, object_data + offset, length);
+			j_helper_atomic_add(bytes_read, length);
 		}
-
-		if (object_backend != NULL)
+		else if (object_backend != NULL)
 		{
 			guint64 nbytes = 0;
 
-			ret = j_backend_object_read(object_backend, object_handle, buffer, buflength, bufoffs, &nbytes) && ret;
+			ret = j_backend_object_read(object_backend, object_handle, data, length, offset, &nbytes) && ret;
 			j_helper_atomic_add(bytes_read, nbytes);
 
             // Transform the read data if the object has a transformation set
             if(transformation != NULL)
             {
-                j_transformation_apply(transformation, buffer, buflength, bufoffs,
+                j_transformation_apply(transformation, data, length, offset,
 					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
-				// fake the "missing" bytes_read
-				// without this the real read bytes are returned (debug)
-				// TODO j_helper_atomic_add(bytes_read, length - buflength);
+				j_transformation_cleanup(transformation, data, length, offset,
+					J_TRANSFORMATION_CALLER_CLIENT_READ);
             }
 		}
 		else
 		{
-			// TODO here we just use the earlier calculated buflength and bufoffs
-			// from j_transformation_prep_read_buffer()
-			// but we do not use the allocated buffer (get's instantly freed
-			// in next block).
-			// Later there is another j_transformation_prep_read_buffer(),
-			// where in the same case of object_backend == NULL the g_input_stream
-			// branch will use the message data from here.
-			// In that case the j_transformation_prep_read_buffer() is just used
-			// to allocate the buffer and setting of buflength and bufoffs is
-			// ignored. Maybe those two effects should be split into two methods?
 			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
-			j_message_append_8(message, &buflength);
-			j_message_append_8(message, &bufoffs);
-		}
-
-		if(transformation != NULL)
-		{
-			j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
-				J_TRANSFORMATION_CALLER_CLIENT_READ);
+			j_message_append_8(message, &length);
+			j_message_append_8(message, &offset);
 		}
 
 		j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
@@ -570,7 +694,13 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 	j_list_iterator_free(it);
 
-	if (object_backend != NULL)
+	if (j_transformation_need_whole_object(transformation,
+		J_TRANSFORMATION_CALLER_CLIENT_READ))
+	{
+		// Cleanup of whole in-memory object
+		g_slice_free1(object_size, object_data);
+	}
+	else if (object_backend != NULL)
 	{
 		ret = j_backend_object_close(object_backend, object_handle) && ret;
 	}
@@ -606,12 +736,10 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 			for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
 			{
-				gpointer buffer;
-				guint64 buflength;
-			    guint64 bufoffs;
-
 				JTransformationObjectOperation* operation = j_list_iterator_get(it);
 				gpointer data = operation->read.data;
+				guint64 length = operation->read.length;
+				guint64 offset = operation->read.offset;
 				guint64* bytes_read = operation->read.bytes_read;
 
 				guint64 nbytes;
@@ -619,38 +747,21 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				nbytes = j_message_get_8(reply);
 				j_helper_atomic_add(bytes_read, nbytes);
 
-				// default is to use target memory directly
-				buffer = data;
-				buflength = operation->read.length;
-				bufoffs = operation->read.offset;
-
-				// with transformations we may need to read more ore less data to temp buffer
-				if(transformation != NULL)
-	            {
-					j_transformation_prep_read_buffer(transformation, data, operation->read.length,
-						operation->read.offset, &buffer, &buflength, &bufoffs, object_size,
-						J_TRANSFORMATION_CALLER_CLIENT_READ);
-				}
-
 				if (nbytes > 0)
 				{
 					GInputStream* input;
 
 					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
-					g_input_stream_read_all(input, buffer, nbytes, NULL, NULL, NULL);
+					g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
 				}
 
                 // Transform the read data if the object has a transformation set
                 if(transformation != NULL)
                 {
-                    j_transformation_apply(transformation, buffer, buflength, bufoffs,
-						&data, &operation->read.length, &operation->read.offset,
+                    j_transformation_apply(transformation, data, length, offset,
+						&data, &length, &offset,
 						J_TRANSFORMATION_CALLER_CLIENT_READ);
-					// fake the "missing" bytes_read
-					// without this the real read bytes are returned (debug)
-					// TODO j_helper_atomic_add(bytes_read, operation->read.length - buflength);
-
-					j_transformation_cleanup(transformation, buffer, buflength, bufoffs,
+					j_transformation_cleanup(transformation, data, length, offset,
 						J_TRANSFORMATION_CALLER_CLIENT_READ);
                 }
 			}
