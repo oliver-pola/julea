@@ -649,14 +649,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 offset = operation->read.offset;
 		guint64* bytes_read = operation->read.bytes_read;
 
-		// TODO why is this repeated?
-        transformation = object->transformation;
-        if(transformation == NULL)
-        {
-            j_transformation_object_load_transformation(object, semantics);
-            transformation = object->transformation;
-        }
-
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
 		if (j_transformation_need_whole_object(transformation,
@@ -800,6 +792,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	g_autoptr(JMessage) message = NULL;
     JTransformationObject* object;
 	gpointer object_handle;
+	JTransformation* transformation = NULL;
 
 	// FIXME
 	//JLock* lock = NULL;
@@ -813,6 +806,13 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
 		object = operation->status.object;
+
+		transformation = object->transformation;
+        if(transformation == NULL)
+        {
+            j_transformation_object_load_transformation(object, semantics);
+            transformation = object->transformation;
+        }
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -853,13 +853,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		guint64 length = operation->write.length;
 		guint64 offset = operation->write.offset;
 		guint64* bytes_written = operation->write.bytes_written;
-
-        JTransformation* transformation = object->transformation;
-        if(transformation == NULL)
-        {
-            j_transformation_object_load_transformation(object, semantics);
-            transformation = object->transformation;
-        }
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
 
