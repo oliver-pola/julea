@@ -272,6 +272,7 @@ JTransformation* j_transformation_new (JTransformationType type,
 
     switch (type)
     {
+        default:
         case J_TRANSFORMATION_TYPE_NONE:
             trafo->partial_access = TRUE;
             break;
@@ -281,8 +282,6 @@ JTransformation* j_transformation_new (JTransformationType type,
         case J_TRANSFORMATION_TYPE_RLE:
             trafo->partial_access = FALSE;
             break;
-        default:
-            trafo->partial_access = TRUE;
     }
 
     return trafo;
@@ -408,7 +407,8 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
     if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
         caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
     {
-        g_slice_free1(length, data);
+        if (trafo->partial_access)
+            g_slice_free1(length, data);
     }
     // read only needs a buffer if transformation can't be done inplace
     else if (!trafo->partial_access)

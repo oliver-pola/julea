@@ -163,8 +163,6 @@ j_transformation_object_write_free (gpointer data)
 {
 	JTransformationObjectOperation* operation = data;
 
-	j_transformation_object_unref(operation->write.object);
-
     if(operation->write.object->transformation != NULL)
     {
 		j_transformation_cleanup(operation->write.object->transformation,
@@ -172,6 +170,8 @@ j_transformation_object_write_free (gpointer data)
 			J_TRANSFORMATION_CALLER_CLIENT_WRITE);
     }
 	g_slice_free(JTransformationObjectOperation, operation);
+
+	j_transformation_object_unref(operation->write.object);
 }
 
 static
@@ -417,10 +417,9 @@ j_transformation_object_read_all (JTransformationObject* object,
 
 	if (object_backend != NULL)
 	{
-		gint64 modification_time; // recieve and ignore
 		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
 		// Get the object size, see procedure in _status_exec()
-		ret = j_backend_object_status(object_backend, object_handle, &modification_time, &object_size) && ret;
+		ret = j_backend_object_status(object_backend, object_handle, NULL, &object_size) && ret;
 	}
 	else
 	{
@@ -462,6 +461,17 @@ j_transformation_object_read_all (JTransformationObject* object,
 		j_connection_pool_push_object(object->index, object_connection);
 	}
 
+	*length = object_size;
+
+	if (object_size == 0)
+	{
+		*data = NULL;
+		return TRUE;
+	}
+
+	// allocate memory for whole object
+	*data = g_slice_alloc(object_size);
+
 	/*
 	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
 	{
@@ -470,10 +480,6 @@ j_transformation_object_read_all (JTransformationObject* object,
 	*/
 
 	j_trace_file_begin(object->name, J_TRACE_FILE_READ);
-
-	// allocate memory for whole object
-	*length = object_size;
-	*data = g_slice_alloc(object_size);
 
 	if (object_backend != NULL)
 	{
@@ -605,16 +611,19 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		guint64 buflength, bufoffset;
 		gpointer buffer = NULL;
 		j_transformation_object_read_all(object, (gpointer*)&object_data, &object_size, semantics);
-		// well, usually client read already has memory allocated that fits the request
-		// but here we don't know the whole size after transformation
-		// TODO as a workaround convention _apply() will hand out the just created buffer
-		// that perfectly fits, if we provide NULL as output buffer
-		j_transformation_apply(transformation, object_data, object_size, 0,
-			&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_READ);
-		// now we have the original data in buffer and don't need the recieved version anymore
-		g_slice_free1(object_size, object_data);
-		object_data = buffer;
-		object_size = buflength;
+		if (object_size > 0)
+		{
+			// well, usually client read already has memory allocated that fits the request
+			// but here we don't know the whole size after transformation
+			// TODO as a workaround convention _apply() will hand out the just created buffer
+			// that perfectly fits, if we provide NULL as output buffer
+			j_transformation_apply(transformation, object_data, object_size, 0,
+				&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+			// now we have the original data in buffer and don't need the recieved version anymore
+			g_slice_free1(object_size, object_data);
+			object_data = buffer;
+			object_size = buflength;
+		}
 	}
 	else if (object_backend != NULL)
 	{
@@ -655,8 +664,17 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 			J_TRANSFORMATION_CALLER_CLIENT_READ))
 		{
 			// Apply read operations in-memory
-			memcpy(data, object_data + offset, length);
-			j_helper_atomic_add(bytes_read, length);
+			guint64 length_to_eof;
+			if (offset > object_size)
+				length_to_eof = 0; // avoid negatives, it's unsigned!
+			else
+				length_to_eof = object_size - offset;
+			length = MIN(length, length_to_eof);
+			if (length > 0)
+			{
+				memcpy(data, object_data + offset, length);
+				j_helper_atomic_add(bytes_read, length);
+			}
 		}
 		else if (object_backend != NULL)
 		{
@@ -783,6 +801,118 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 static
 gboolean
+j_transformation_object_write_all (JTransformationObject* object,
+	gpointer data, guint64 length, JSemantics* semantics)
+{
+	gboolean ret = TRUE;
+
+	JBackend* object_backend;
+	g_autoptr(JMessage) message = NULL;
+	gpointer object_handle;
+
+	// FIXME
+	//JLock* lock = NULL;
+
+	g_return_val_if_fail(object != NULL, FALSE);
+	g_return_val_if_fail(semantics != NULL, FALSE);
+
+	j_trace_enter(G_STRFUNC, NULL);
+
+	object_backend = j_object_backend();
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
+	}
+	else
+	{
+		gsize name_len;
+		gsize namespace_len;
+
+		namespace_len = strlen(object->namespace) + 1;
+		name_len = strlen(object->name) + 1;
+
+		message = j_message_new(J_MESSAGE_OBJECT_WRITE, namespace_len + name_len);
+		j_message_set_safety(message, semantics);
+		j_message_append_n(message, object->namespace, namespace_len);
+		j_message_append_n(message, object->name, name_len);
+	}
+
+	/*
+	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
+	{
+		lock = j_lock_new("item", path);
+	}
+	*/
+
+	j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
+
+	/*
+	if (lock != NULL)
+	{
+		j_lock_add(lock, block_id);
+	}
+	*/
+
+	if (object_backend != NULL)
+	{
+		guint64 nbytes = 0;
+		ret = j_backend_object_write(object_backend, object_handle, data, length, 0, &nbytes) && ret;
+	}
+	else
+	{
+		guint64 offset = 0;
+		j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+		j_message_append_8(message, &length);
+		j_message_append_8(message, &offset);
+		j_message_add_send(message, data, length);
+	}
+
+	j_trace_file_end(object->name, J_TRACE_FILE_WRITE, length, 0);
+
+	if (object_backend != NULL)
+	{
+		ret = j_backend_object_close(object_backend, object_handle) && ret;
+	}
+	else
+	{
+		GSocketConnection* object_connection;
+
+		object_connection = j_connection_pool_pop_object(object->index);
+		j_message_send(message, object_connection);
+
+		if (j_message_get_flags(message) & J_MESSAGE_FLAGS_SAFETY_NETWORK)
+		{
+			g_autoptr(JMessage) reply = NULL;
+			// guint64 nbytes;
+
+			reply = j_message_new_reply(message);
+			j_message_receive(reply, object_connection);
+
+			// nbytes =
+			j_message_get_8(reply);
+		}
+
+		j_connection_pool_push_object(object->index, object_connection);
+	}
+
+	/*
+	if (lock != NULL)
+	{
+		// FIXME busy wait
+		while (!j_lock_acquire(lock));
+
+		j_lock_free(lock);
+	}
+	*/
+
+	j_trace_leave(G_STRFUNC);
+
+	return ret;
+}
+
+static
+gboolean
 j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 {
 	gboolean ret = TRUE;
@@ -793,6 +923,9 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
     JTransformationObject* object;
 	gpointer object_handle;
 	JTransformation* transformation = NULL;
+	// for complex transformations we will need to load the whole object
+	guint8* object_data;
+	guint64 object_size;
 
 	// FIXME
 	//JLock* lock = NULL;
@@ -821,7 +954,51 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	it = j_list_iterator_new(operations);
 	object_backend = j_object_backend();
 
-	if (object_backend != NULL)
+	if (j_transformation_need_whole_object(transformation,
+		J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+	{
+		guint64 object_grown_size;
+		guint64 buflength, bufoffset;
+		gpointer buffer = NULL;
+
+		j_transformation_object_read_all(object, (gpointer*)&object_data, &object_size, semantics);
+		if (object_size > 0)
+		{
+			// Watch out: This is a _CLIENT_READ even if we are inside _write_exec()
+			// well, usually client read already has memory allocated that fits the request
+			// but here we don't know the whole size after transformation
+			// TODO as a workaround convention _apply() will hand out the just created buffer
+			// that perfectly fits, if we provide NULL as output buffer
+			j_transformation_apply(transformation, object_data, object_size, 0,
+				&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+			// now we have the original data in buffer and don't need the recieved version anymore
+			g_slice_free1(object_size, object_data);
+			object_data = buffer;
+			object_size = buflength;
+		}
+
+		// prepare for growing object
+		object_grown_size = object_size;
+		while (j_list_iterator_next(it))
+		{
+			JTransformationObjectOperation* operation = j_list_iterator_get(it);
+			object_grown_size = MAX(object_grown_size,
+				operation->write.offset + operation->write.length);
+		}
+		j_list_iterator_free(it);
+		it = j_list_iterator_new(operations);
+		// get new memory in proper size
+		if (object_grown_size > object_size)
+		{
+			buffer = g_slice_alloc(object_grown_size);
+			memcpy(buffer, object_data, object_size);
+			memset(buffer + object_size, 0, object_grown_size - object_size);
+			g_slice_free1(object_size, object_data);
+			object_data = buffer;
+			object_size = object_grown_size;
+		}
+	}
+	else if (object_backend != NULL)
 	{
 		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
 	}
@@ -863,31 +1040,41 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		}
 		*/
 
-        //Transform the data if necessary
-        if(transformation != NULL)
-        {
-            j_transformation_apply(transformation, data, length, offset,
-				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
-			// fake the "missing" bytes_written
-			// without this the real written bytes are returned (debug)
-			// TODO j_helper_atomic_add(bytes_written, operation->write.length - length);
-
-			// data, length, offset could have changed
-            operation->write.data = data;
-			operation->write.length = length;
-			operation->write.offset = offset;
-        }
-
-
-		if (object_backend != NULL)
+		if (j_transformation_need_whole_object(transformation,
+			J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+		{
+			// Apply read operations in-memory
+			// boundaries already checked
+			memcpy(object_data + offset, data, length);
+			j_helper_atomic_add(bytes_written, length);
+		}
+		else if (object_backend != NULL)
 		{
 			guint64 nbytes = 0;
+
+			if(transformation != NULL)
+	        {
+				// this is the simple case where length and offset do not change
+	            j_transformation_apply(transformation, data, length, offset,
+					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+				// data changed to new buffer, stored in operation to free later
+	            operation->write.data = data;
+	        }
 
 			ret = j_backend_object_write(object_backend, object_handle, data, length, offset, &nbytes) && ret;
 			j_helper_atomic_add(bytes_written, nbytes);
 		}
 		else
 		{
+			if(transformation != NULL)
+	        {
+				// this is the simple case where length and offset do not change
+	            j_transformation_apply(transformation, data, length, offset,
+					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+				// data changed to new buffer, stored in operation to free later
+	            operation->write.data = data;
+	        }
+
 			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
 			j_message_append_8(message, &length);
 			j_message_append_8(message, &offset);
@@ -905,7 +1092,21 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 
 	j_list_iterator_free(it);
 
-	if (object_backend != NULL)
+	if (j_transformation_need_whole_object(transformation,
+		J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+	{
+		guint64 buflength, bufoffset;
+		gpointer buffer = NULL;
+		j_transformation_apply(transformation, object_data, object_size, 0,
+			&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+
+		j_transformation_object_write_all (object, buffer, buflength, semantics);
+
+		// Cleanup of whole in-memory object
+		g_slice_free1(object_size, object_data);
+		g_slice_free1(buflength, buffer);
+	}
+	else if (object_backend != NULL)
 	{
 		ret = j_backend_object_close(object_backend, object_handle) && ret;
 	}
@@ -1048,8 +1249,10 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 			modification_time_ = j_message_get_8(reply);
 			size_ = j_message_get_8(reply);
 
-			*modification_time = modification_time_;
-			*size = size_;
+			if (modification_time != NULL)
+				*modification_time = modification_time_;
+			if (size != NULL)
+				*size = size_;
 		}
 
 		j_list_iterator_free(it);
