@@ -61,15 +61,12 @@ struct JTransformation
  * XOR with 1 for each bit
  */
 static void j_transformation_apply_xor (gpointer input, gpointer* output,
-    guint64* length, guint64* offset)
+    guint64* length)
 {
     guint8* in;
     guint8* out;
 
-    (void)offset; // unused
-
     in = input;
-
     out = g_slice_alloc(*length);
 
     for(guint i = 0; i < *length; i++)
@@ -81,16 +78,16 @@ static void j_transformation_apply_xor (gpointer input, gpointer* output,
 }
 
 static void j_transformation_apply_xor_inverse (gpointer input, gpointer* output,
-    guint64* length, guint64* offset)
+    guint64* length)
 {
-    j_transformation_apply_xor(input, output, length, offset);
+    j_transformation_apply_xor(input, output, length);
 }
 
 /**
  * Simple run length encoding
  */
 static void j_transformation_apply_rle (gpointer input, gpointer* output,
-    guint64* length, guint64* offset)
+    guint64* length)
 {
     guint8* in;
     guint8* out;
@@ -157,13 +154,10 @@ static void j_transformation_apply_rle (gpointer input, gpointer* output,
 
     *output = out;
     *length = outpos;
-
-    // in the object we start reading/writing at offset 0 in any case
-    *offset = 0;
 }
 
 static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output,
-    guint64* length, guint64* offset)
+    guint64* length)
 {
     guint8* in;
     guint8* out;
@@ -196,9 +190,6 @@ static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output
 
     *output = out;
     *length = outpos;
-
-    // in the object we start reading/writing at offset 0 in any case
-    *offset = 0;
 }
 
 static gboolean j_transformation_here(JTransformation* trafo,
@@ -347,18 +338,25 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
             return;
         case J_TRANSFORMATION_TYPE_XOR:
             if(inverse)
-                j_transformation_apply_xor_inverse(input, &buffer, &length, &offset);
+                j_transformation_apply_xor_inverse(input, &buffer, &length);
             else
-                j_transformation_apply_xor(input, &buffer, &length, &offset);
+                j_transformation_apply_xor(input, &buffer, &length);
             break;
         case J_TRANSFORMATION_TYPE_RLE:
             if(inverse)
-                j_transformation_apply_rle_inverse(input, &buffer, &length, &offset);
+                j_transformation_apply_rle_inverse(input, &buffer, &length);
             else
-                j_transformation_apply_rle(input, &buffer, &length, &offset);
+                j_transformation_apply_rle(input, &buffer, &length);
             break;
         default:
             return;
+    }
+
+    // when !trafo->partial_access both input and output need to be the whole
+    // object, which is realized by the caller
+    if (!trafo->partial_access)
+    {
+        offset = 0;
     }
 
     // output buffer is always created by the method, but for read we have
@@ -368,7 +366,6 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
         caller == J_TRANSFORMATION_CALLER_SERVER_READ) && *output != NULL)
     {
         g_return_if_fail(buffer != NULL);
-        // g_return_if_fail(*output != NULL);
         // buffer can now be the whole tranformed object while output
         // only wanted a small part of it
         g_return_if_fail(length - offset + *outoffset >= *outlength);

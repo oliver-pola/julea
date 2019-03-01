@@ -577,6 +577,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	// for complex transformations we will need to load the whole object
 	guint8* object_data;
 	guint64 object_size;
+	gboolean transformation_need_whole_object = FALSE;
 
 	// FIXME
 	//JLock* lock = NULL;
@@ -605,8 +606,10 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	it = j_list_iterator_new(operations);
 	object_backend = j_object_backend();
 
-	if (j_transformation_need_whole_object(transformation,
-		J_TRANSFORMATION_CALLER_CLIENT_READ))
+	transformation_need_whole_object = j_transformation_need_whole_object(transformation,
+		J_TRANSFORMATION_CALLER_CLIENT_READ);
+
+	if (transformation_need_whole_object)
 	{
 		guint64 buflength, bufoffset;
 		gpointer buffer = NULL;
@@ -660,8 +663,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
-		if (j_transformation_need_whole_object(transformation,
-			J_TRANSFORMATION_CALLER_CLIENT_READ))
+		if (transformation_need_whole_object)
 		{
 			// Apply read operations in-memory
 			guint64 length_to_eof;
@@ -704,8 +706,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 	j_list_iterator_free(it);
 
-	if (j_transformation_need_whole_object(transformation,
-		J_TRANSFORMATION_CALLER_CLIENT_READ))
+	if (transformation_need_whole_object)
 	{
 		// Cleanup of whole in-memory object
 		g_slice_free1(object_size, object_data);
@@ -926,6 +927,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	// for complex transformations we will need to load the whole object
 	guint8* object_data;
 	guint64 object_size;
+	gboolean transformation_need_whole_object = FALSE;
 
 	// FIXME
 	//JLock* lock = NULL;
@@ -954,12 +956,14 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	it = j_list_iterator_new(operations);
 	object_backend = j_object_backend();
 
-	if (j_transformation_need_whole_object(transformation,
-		J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+	transformation_need_whole_object = j_transformation_need_whole_object(transformation,
+		J_TRANSFORMATION_CALLER_CLIENT_READ);
+
+	if (transformation_need_whole_object)
 	{
 		guint64 object_grown_size;
 		guint64 buflength, bufoffset;
-		gpointer buffer = NULL;
+		guint8* buffer = NULL;
 
 		j_transformation_object_read_all(object, (gpointer*)&object_data, &object_size, semantics);
 		if (object_size > 0)
@@ -970,7 +974,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 			// TODO as a workaround convention _apply() will hand out the just created buffer
 			// that perfectly fits, if we provide NULL as output buffer
 			j_transformation_apply(transformation, object_data, object_size, 0,
-				&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+				(gpointer*)&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_READ);
 			// now we have the original data in buffer and don't need the recieved version anymore
 			g_slice_free1(object_size, object_data);
 			object_data = buffer;
@@ -1040,8 +1044,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		}
 		*/
 
-		if (j_transformation_need_whole_object(transformation,
-			J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+		if (transformation_need_whole_object)
 		{
 			// Apply read operations in-memory
 			// boundaries already checked
@@ -1092,8 +1095,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 
 	j_list_iterator_free(it);
 
-	if (j_transformation_need_whole_object(transformation,
-		J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+	if (transformation_need_whole_object)
 	{
 		guint64 buflength, bufoffset;
 		gpointer buffer = NULL;
