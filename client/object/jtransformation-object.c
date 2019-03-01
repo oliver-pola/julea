@@ -589,7 +589,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	{
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
-        object = operation->status.object;
+        object = operation->read.object;
 
         transformation = object->transformation;
         if(transformation == NULL)
@@ -938,7 +938,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	{
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
-		object = operation->status.object;
+		object = operation->write.object;
 
 		transformation = object->transformation;
         if(transformation == NULL)
@@ -1250,9 +1250,13 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 			size_ = j_message_get_8(reply);
 
 			if (modification_time != NULL)
+			{
 				*modification_time = modification_time_;
+			}
 			if (size != NULL)
+			{
 				*size = size_;
+			}
 		}
 
 		j_list_iterator_free(it);
