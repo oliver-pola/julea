@@ -26,6 +26,8 @@
 
 #include <glib.h>
 
+#include <lz4.h>
+
 /**
  * \defgroup JTransformation Transformation
  * @{
@@ -192,6 +194,51 @@ static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output
     *length = outpos;
 }
 
+/**
+ * Use LZ4 compression with "lz4" library, https://github.com/lz4/lz4
+ */
+static void j_transformation_apply_lz4 (gpointer input, gpointer* output,
+    guint64* length)
+{
+    char* out;
+    guint64 max_out_len, used_out_len;
+
+    // LZ4 has a function to estimate the output (upper bound)
+    max_out_len = LZ4_compressBound(*length);
+    out = g_slice_alloc(max_out_len);
+
+    // Compression
+    used_out_len = LZ4_compress_default(input, out, *length, max_out_len);
+
+    // Copy the used part only
+    *output = g_slice_alloc(used_out_len);
+    *length = used_out_len;
+    memcpy(*output, out, used_out_len);
+
+    g_slice_free1(max_out_len, out);
+}
+
+static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output,
+    guint64* length)
+{
+    char* out;
+    guint64 max_out_len, used_out_len;
+
+    // TODO need to allocate at least the original size
+    max_out_len = 1000; // JUST FOR TESTING!!!!
+    out = g_slice_alloc(max_out_len);
+
+    // Decompression
+    used_out_len = LZ4_decompress_safe(input, out, *length, max_out_len);
+
+    // Copy the used part only
+    *output = g_slice_alloc(used_out_len);
+    *length = used_out_len;
+    memcpy(*output, out, used_out_len);
+
+    g_slice_free1(max_out_len, out);
+}
+
 static gboolean j_transformation_here(JTransformation* trafo,
     JTransformationCaller caller)
 {
@@ -273,6 +320,9 @@ JTransformation* j_transformation_new (JTransformationType type,
         case J_TRANSFORMATION_TYPE_RLE:
             trafo->partial_access = FALSE;
             break;
+        case J_TRANSFORMATION_TYPE_LZ4:
+            trafo->partial_access = FALSE;
+            break;
     }
 
     return trafo;
@@ -347,6 +397,12 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
                 j_transformation_apply_rle_inverse(input, &buffer, &length);
             else
                 j_transformation_apply_rle(input, &buffer, &length);
+            break;
+        case J_TRANSFORMATION_TYPE_LZ4:
+            if(inverse)
+                j_transformation_apply_lz4_inverse(input, &buffer, &length);
+            else
+                j_transformation_apply_lz4(input, &buffer, &length);
             break;
         default:
             return;

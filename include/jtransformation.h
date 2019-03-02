@@ -35,7 +35,8 @@ enum JTransformationType
 {
     J_TRANSFORMATION_TYPE_NONE,
     J_TRANSFORMATION_TYPE_XOR,
-    J_TRANSFORMATION_TYPE_RLE
+    J_TRANSFORMATION_TYPE_RLE,
+    J_TRANSFORMATION_TYPE_LZ4
 };
 
 typedef enum JTransformationType JTransformationType;

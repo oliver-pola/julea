@@ -120,6 +120,7 @@ def options (ctx):
 	ctx.add_option('--hdf5', action='store', default=None, help='HDF5 prefix', dest='hdf')
 	ctx.add_option('--otf', action='store', default=None, help='OTF prefix')
 	ctx.add_option('--sqlite', action='store', default=None, help='SQLite prefix')
+	ctx.add_option('--lz4', action='store', default=None, help='lz4 prefix')
 
 def configure (ctx):
 	ctx.load('compiler_c')
@@ -161,6 +162,14 @@ def configure (ctx):
 		args = ['--cflags', '--libs', 'libbson-1.0 >= {0}'.format(libbson_version)],
 		uselib_store = 'LIBBSON',
 		pkg_config_path = get_pkg_config_path(ctx.options.libbson)
+	)
+
+	check_cfg_rpath(
+		ctx,
+		package = 'liblz4',
+		args = ['--cflags', '--libs'],
+		uselib_store = 'LZ4',
+		pkg_config_path = get_pkg_config_path(ctx.options.lz4)
 	)
 
 	ctx.env.JULEA_LIBMONGOC = \
@@ -387,7 +396,7 @@ def build (ctx):
 #	)
 
 	use_julea_core = ['M', 'GLIB', 'ASAN'] # 'UBSAN'
-	use_julea_lib = use_julea_core + ['GIO', 'GOBJECT', 'LIBBSON', 'OTF']
+	use_julea_lib = use_julea_core + ['GIO', 'GOBJECT', 'LIBBSON', 'OTF', 'LZ4']
 	use_julea_backend = use_julea_core + ['GMODULE']
 
 	# Library

@@ -123,6 +123,7 @@ spack_get_dependencies ()
 	dependencies="${dependencies} lmdb"
 	dependencies="${dependencies} libmongoc"
 	dependencies="${dependencies} sqlite"
+	dependencies="${dependencies} lz4"
 
 	#dependencies="${dependencies} mpi"
 	#dependencies="${dependencies} otf"
