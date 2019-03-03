@@ -474,6 +474,22 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
     }
 }
 
+JTransformationMode j_transformation_get_mode(JTransformation* trafo)
+{
+    if (trafo == NULL)
+        return J_TRANSFORMATION_MODE_CLIENT;
+    else
+        return trafo->mode;
+}
+
+JTransformationType j_transformation_get_type(JTransformation* trafo)
+{
+    if (trafo == NULL)
+        return J_TRANSFORMATION_TYPE_NONE;
+    else
+        return trafo->type;
+}
+
 gboolean j_transformation_need_whole_object (JTransformation* trafo,
     JTransformationCaller caller)
 {

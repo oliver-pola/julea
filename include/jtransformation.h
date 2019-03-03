@@ -36,7 +36,7 @@ enum JTransformationType
     J_TRANSFORMATION_TYPE_NONE,
     J_TRANSFORMATION_TYPE_XOR,
     J_TRANSFORMATION_TYPE_RLE,
-    J_TRANSFORMATION_TYPE_LZ4
+    J_TRANSFORMATION_TYPE_LZ4,
 };
 
 typedef enum JTransformationType JTransformationType;
@@ -51,7 +51,7 @@ enum JTransformationMode
     J_TRANSFORMATION_MODE_TRANSPORT,
 
     // Server encodes on write, decodes on read
-    J_TRANSFORMATION_MODE_SERVER
+    J_TRANSFORMATION_MODE_SERVER,
 };
 
 typedef enum JTransformationMode JTransformationMode;
@@ -61,7 +61,7 @@ enum JTransformationCaller
     J_TRANSFORMATION_CALLER_CLIENT_READ,
     J_TRANSFORMATION_CALLER_CLIENT_WRITE,
     J_TRANSFORMATION_CALLER_SERVER_READ,
-    J_TRANSFORMATION_CALLER_SERVER_WRITE
+    J_TRANSFORMATION_CALLER_SERVER_WRITE,
 };
 
 typedef enum JTransformationCaller JTransformationCaller;
@@ -78,6 +78,8 @@ void j_transformation_apply (JTransformation*, gpointer, guint64, guint64,
     gpointer*, guint64*, guint64*, JTransformationCaller);
 void j_transformation_cleanup (JTransformation*, gpointer, guint64, guint64,
     JTransformationCaller);
+JTransformationMode j_transformation_get_mode(JTransformation*);
+JTransformationType j_transformation_get_type(JTransformation*);
 gboolean j_transformation_need_whole_object (JTransformation*, JTransformationCaller);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformation, j_transformation_unref)

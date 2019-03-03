@@ -114,6 +114,8 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 		guint i;
 
 		gboolean transformation_client = FALSE;
+		JTransformationMode transformation_mode = J_TRANSFORMATION_MODE_SERVER;
+		JTransformationType transformation_type = J_TRANSFORMATION_TYPE_NONE;
 
 		operation_count = j_message_get_count(message);
 		type_modifier = j_message_get_flags(message);
@@ -206,6 +208,8 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_READ:
 				transformation_client = TRUE;
+				transformation_mode = j_message_get_1(message);
+				transformation_type = j_message_get_1(message);
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_READ:
 				{
@@ -268,6 +272,8 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_WRITE:
 				transformation_client = TRUE;
+				transformation_mode = j_message_get_1(message);
+				transformation_type = j_message_get_1(message);
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_WRITE:
 				{
@@ -387,9 +393,24 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 							j_statistics_add(statistics, J_STATISTICS_FILES_STATED, 1);
 						}
 
-						j_message_add_operation(reply, sizeof(gint64) + sizeof(guint64));
-						j_message_append_8(reply, &modification_time);
-						j_message_append_8(reply, &size);
+						// TODO check for transformation and get original size from KV
+						// even if the client ist not a transformation client
+						if (transformation_client)
+						{
+							JTransformationType transformation_type_ = J_TRANSFORMATION_TYPE_NONE;
+
+							j_message_add_operation(reply, 3 * sizeof(guint64) + sizeof(guint8));
+							j_message_append_8(reply, &modification_time);
+							j_message_append_8(reply, &size); // original
+							j_message_append_8(reply, &size); // transformed
+							j_message_append_1(reply, &transformation_type_);
+						}
+						else
+						{
+							j_message_add_operation(reply, sizeof(gint64) + sizeof(guint64));
+							j_message_append_8(reply, &modification_time);
+							j_message_append_8(reply, &size);
+						}
 
 						j_backend_object_close(jd_object_backend, object);
 					}

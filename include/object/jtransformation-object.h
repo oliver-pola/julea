@@ -53,6 +53,7 @@ void j_transformation_object_read (JTransformationObject*, gpointer, guint64, gu
 void j_transformation_object_write (JTransformationObject*, gconstpointer, guint64, guint64, guint64*, JBatch*);
 
 void j_transformation_object_status (JTransformationObject*, gint64*, guint64*, JBatch*);
+void j_transformation_object_status_ext (JTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, JBatch*);
 
 G_END_DECLS
 

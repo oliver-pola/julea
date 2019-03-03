@@ -52,7 +52,9 @@ struct JTransformationObjectOperation
 		{
 			JTransformationObject* object;
 			gint64* modification_time;
-			guint64* size;
+			guint64* original_size;
+			guint64* transformed_size;
+			JTransformationType* transformation_type;
 		}
 		status;
 
@@ -428,12 +430,20 @@ j_transformation_object_read_all (JTransformationObject* object,
 		g_autoptr(JMessage) reply = NULL;
 		GSocketConnection* object_connection;
 
+		// Always need the stored data as it is, type ierrelevant here.
+		// Sending the type was just meant to make it easier for the server
+		// in _MODE_SERVER when the transformation client already knows that
+		guint8 transformation_mode = J_TRANSFORMATION_MODE_CLIENT;
+		guint8 transformation_type = J_TRANSFORMATION_TYPE_NONE;
+
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
 		// Prepare the message for data
-		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, 2 + namespace_len + name_len);
 		j_message_set_safety(message, semantics);
+		j_message_append_1(message, &transformation_mode);
+		j_message_append_1(message, &transformation_type);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
 
@@ -637,11 +647,16 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		gsize name_len;
 		gsize namespace_len;
 
+		guint8 transformation_mode = (guint8)j_transformation_get_mode(transformation);
+		guint8 transformation_type = (guint8)j_transformation_get_type(transformation);
+
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, 2 + namespace_len + name_len);
 		j_message_set_safety(message, semantics);
+		j_message_append_1(message, &transformation_mode);
+		j_message_append_1(message, &transformation_type);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
 	}
@@ -830,11 +845,19 @@ j_transformation_object_write_all (JTransformationObject* object,
 		gsize name_len;
 		gsize namespace_len;
 
+		// Always write data to storage as it is, type ierrelevant here.
+		// Sending the type was just meant to make it easier for the server
+		// in _MODE_SERVER when the transformation client already knows that
+		guint8 transformation_mode = J_TRANSFORMATION_MODE_CLIENT;
+		guint8 transformation_type = J_TRANSFORMATION_TYPE_NONE;
+
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, 2 + namespace_len + name_len);
 		j_message_set_safety(message, semantics);
+		j_message_append_1(message, &transformation_mode);
+		j_message_append_1(message, &transformation_type);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
 	}
@@ -1011,11 +1034,16 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		gsize name_len;
 		gsize namespace_len;
 
+		guint8 transformation_mode = (guint8)j_transformation_get_mode(transformation);
+		guint8 transformation_type = (guint8)j_transformation_get_type(transformation);
+
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, 2 + namespace_len + name_len);
 		j_message_set_safety(message, semantics);
+		j_message_append_1(message, &transformation_mode);
+		j_message_append_1(message, &transformation_type);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
 	}
@@ -1204,15 +1232,33 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 		JTransformationObjectOperation* operation = j_list_iterator_get(it);
 		JTransformationObject* object = operation->status.object;
 		gint64* modification_time = operation->status.modification_time;
-		guint64* size = operation->status.size;
+		guint64* original_size = operation->status.original_size;
+		guint64* transformed_size = operation->status.transformed_size;
+		JTransformationType* transformation_type = operation->status.transformation_type;
 
 		if (object_backend != NULL)
 		{
 			gpointer object_handle;
+			guint64 size;
 
 			ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
-			ret = j_backend_object_status(object_backend, object_handle, modification_time, size) && ret;
+			ret = j_backend_object_status(object_backend, object_handle, modification_time, &size) && ret;
 			ret = j_backend_object_close(object_backend, object_handle) && ret;
+
+			// TODO Get original_size and transformation_type from KV
+			// or is it on JTransformationObject already?
+			if (original_size != NULL)
+			{
+				*original_size = size;
+			}
+			if (transformed_size != NULL)
+			{
+				*transformed_size = size;
+			}
+			if (transformation_type != NULL)
+			{
+				*transformation_type = j_transformation_get_type(object->transformation);
+			}
 		}
 		else
 		{
@@ -1244,20 +1290,34 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 		{
 			JTransformationObjectOperation* operation = j_list_iterator_get(it);
 			gint64* modification_time = operation->status.modification_time;
-			guint64* size = operation->status.size;
+			guint64* original_size = operation->status.original_size;
+			guint64* transformed_size = operation->status.transformed_size;
+			JTransformationType* transformation_type = operation->status.transformation_type;
 			gint64 modification_time_;
-			guint64 size_;
+			guint64 original_size_;
+			guint64 transformed_size_;
+			JTransformationType transformation_type_;
 
 			modification_time_ = j_message_get_8(reply);
-			size_ = j_message_get_8(reply);
+			original_size_ = j_message_get_8(reply);
+			transformed_size_ = j_message_get_8(reply);
+			transformation_type_ = j_message_get_1(reply);
 
 			if (modification_time != NULL)
 			{
 				*modification_time = modification_time_;
 			}
-			if (size != NULL)
+			if (original_size != NULL)
 			{
-				*size = size_;
+				*original_size = original_size_;
+			}
+			if (transformed_size != NULL)
+			{
+				*transformed_size = transformed_size_;
+			}
+			if (transformation_type != NULL)
+			{
+				*transformation_type = transformation_type_;
 			}
 		}
 
@@ -1610,7 +1670,26 @@ j_transformation_object_write (JTransformationObject* object, gconstpointer data
  * \param batch     A batch.
  **/
 void
-j_transformation_object_status (JTransformationObject* object, gint64* modification_time, guint64* size, JBatch* batch)
+j_transformation_object_status (JTransformationObject* object, gint64* modification_time,
+	guint64* size, JBatch* batch)
+{
+	j_transformation_object_status_ext(object, modification_time, size, NULL, NULL, batch);
+}
+
+/**
+ * Get the status of an item with transformation properties.
+ *
+ * \author Michael Blesel, Oliver Pola
+ *
+ * \code
+ * \endcode
+ *
+ * \param item      An item.
+ * \param batch     A batch.
+ **/
+void
+j_transformation_object_status_ext (JTransformationObject* object, gint64* modification_time,
+	guint64* original_size, guint64* transformed_size, JTransformationType* transformation_type, JBatch* batch)
 {
 	JTransformationObjectOperation* iop;
 	JOperation* operation;
@@ -1622,7 +1701,9 @@ j_transformation_object_status (JTransformationObject* object, gint64* modificat
 	iop = g_slice_new(JTransformationObjectOperation);
 	iop->status.object = j_transformation_object_ref(object);
 	iop->status.modification_time = modification_time;
-	iop->status.size = size;
+	iop->status.original_size = original_size;
+	iop->status.transformed_size = transformed_size;
+	iop->status.transformation_type = transformation_type;
 
 	operation = j_operation_new();
 	operation->key = object;
