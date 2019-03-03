@@ -201,19 +201,21 @@ static void j_transformation_apply_lz4 (gpointer input, gpointer* output,
     guint64* length)
 {
     char* out;
-    guint64 max_out_len, used_out_len;
+    guint64 max_out_len;
+    gint64 lz4_compression_result;
 
     // LZ4 has a function to estimate the output (upper bound)
     max_out_len = LZ4_compressBound(*length);
     out = g_slice_alloc(max_out_len);
 
     // Compression
-    used_out_len = LZ4_compress_default(input, out, *length, max_out_len);
+    lz4_compression_result = LZ4_compress_default(input, out, *length, max_out_len);
+    g_assert(lz4_compression_result > 0);
 
     // Copy the used part only
-    *output = g_slice_alloc(used_out_len);
-    *length = used_out_len;
-    memcpy(*output, out, used_out_len);
+    *output = g_slice_alloc(lz4_compression_result);
+    *length = lz4_compression_result;
+    memcpy(*output, out, lz4_compression_result);
 
     g_slice_free1(max_out_len, out);
 }
@@ -222,19 +224,21 @@ static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output
     guint64* length)
 {
     char* out;
-    guint64 max_out_len, used_out_len;
+    guint64 max_out_len;
+    gint64 lz4_decompression_result;
 
     // TODO need to allocate at least the original size
     max_out_len = 1000; // JUST FOR TESTING!!!!
     out = g_slice_alloc(max_out_len);
 
     // Decompression
-    used_out_len = LZ4_decompress_safe(input, out, *length, max_out_len);
+    lz4_decompression_result = LZ4_decompress_safe(input, out, *length, max_out_len);
+    g_assert(lz4_decompression_result > 0);
 
     // Copy the used part only
-    *output = g_slice_alloc(used_out_len);
-    *length = used_out_len;
-    memcpy(*output, out, used_out_len);
+    *output = g_slice_alloc(lz4_decompression_result);
+    *length = lz4_decompression_result;
+    memcpy(*output, out, *length);
 
     g_slice_free1(max_out_len, out);
 }
