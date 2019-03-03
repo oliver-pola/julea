@@ -216,7 +216,7 @@ j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
 		 * - The second operation is executed first and fails because the item does not exist.
 		 * This does not completely eliminate all races but fixes the common case of create, write, write, ...
 		 **/
-		message = j_message_new(J_MESSAGE_OBJECT_CREATE, namespace_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_CREATE, namespace_len);
 		j_message_set_safety(message, semantics);
 		//j_message_force_safety(message, J_SEMANTICS_SAFETY_NETWORK);
 		j_message_append_n(message, namespace, namespace_len);
@@ -303,7 +303,7 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 
 	if (object_backend == NULL)
 	{
-		message = j_message_new(J_MESSAGE_OBJECT_DELETE, namespace_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_DELETE, namespace_len);
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
 	}
@@ -432,7 +432,7 @@ j_transformation_object_read_all (JTransformationObject* object,
 		name_len = strlen(object->name) + 1;
 
 		// Prepare the message for data
-		message = j_message_new(J_MESSAGE_OBJECT_READ, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, namespace_len + name_len);
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
@@ -440,7 +440,7 @@ j_transformation_object_read_all (JTransformationObject* object,
 		// Get the object size, see procedure in _status_exec()
 		// We need the replied object_size to allocate memory
 		// and further construct the data message
-		message_status = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
+		message_status = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_STATUS, namespace_len);
 		j_message_set_safety(message_status, semantics);
 		j_message_append_n(message_status, object->namespace, namespace_len);
 
@@ -640,7 +640,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-		message = j_message_new(J_MESSAGE_OBJECT_READ, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, namespace_len + name_len);
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
@@ -833,7 +833,7 @@ j_transformation_object_write_all (JTransformationObject* object,
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-		message = j_message_new(J_MESSAGE_OBJECT_WRITE, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, namespace_len + name_len);
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
@@ -1014,7 +1014,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-		message = j_message_new(J_MESSAGE_OBJECT_WRITE, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, namespace_len + name_len);
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
@@ -1194,7 +1194,7 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 
 	if (object_backend == NULL)
 	{
-		message = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_STATUS, namespace_len);
 		j_message_set_safety(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
 	}

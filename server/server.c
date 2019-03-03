@@ -113,6 +113,8 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 		JSemanticsSafety safety;
 		guint i;
 
+		gboolean transformation_client = FALSE;
+
 		operation_count = j_message_get_count(message);
 		type_modifier = j_message_get_flags(message);
 		safety = jd_safety_message_to_semantics(type_modifier);
@@ -121,6 +123,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 		{
 			case J_MESSAGE_NONE:
 				break;
+			case J_MESSAGE_TRANSFORMATION_OBJECT_CREATE:
+				transformation_client = TRUE;
+				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_CREATE:
 				{
 					g_autoptr(JMessage) reply = NULL;
@@ -162,6 +167,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 					}
 				}
 				break;
+			case J_MESSAGE_TRANSFORMATION_OBJECT_DELETE:
+				transformation_client = TRUE;
+				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_DELETE:
 				{
 					g_autoptr(JMessage) reply = NULL;
@@ -196,6 +204,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 					}
 				}
 				break;
+			case J_MESSAGE_TRANSFORMATION_OBJECT_READ:
+				transformation_client = TRUE;
+				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_READ:
 				{
 					JMessage* reply;
@@ -255,6 +266,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 					j_memory_chunk_reset(memory_chunk);
 				}
 				break;
+			case J_MESSAGE_TRANSFORMATION_OBJECT_WRITE:
+				transformation_client = TRUE;
+				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_WRITE:
 				{
 					g_autoptr(JMessage) reply = NULL;
@@ -346,6 +360,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 					j_memory_chunk_reset(memory_chunk);
 				}
 				break;
+			case J_MESSAGE_TRANSFORMATION_OBJECT_STATUS:
+				transformation_client = TRUE;
+				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_STATUS:
 				{
 					g_autoptr(JMessage) reply = NULL;
