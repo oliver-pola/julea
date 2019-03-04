@@ -255,17 +255,13 @@ static gboolean j_transformation_here(JTransformation* trafo,
     {
         default:
         case J_TRANSFORMATION_MODE_CLIENT:
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
-                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE)
-                return TRUE;
-            break;
+            return caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE;
         case J_TRANSFORMATION_MODE_TRANSPORT:
             return TRUE;
         case J_TRANSFORMATION_MODE_SERVER:
-            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
-                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
-                return TRUE;
-            break;
+            return caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE;
     }
     return FALSE;
 }
@@ -278,24 +274,12 @@ static gboolean j_transformation_inverse(JTransformation* trafo,
     {
         default:
         case J_TRANSFORMATION_MODE_CLIENT:
-            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ ||
-                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
-                return FALSE;
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ)
-                return TRUE;
-            break;
+            return caller == J_TRANSFORMATION_CALLER_CLIENT_READ;
         case J_TRANSFORMATION_MODE_TRANSPORT:
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
-                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
-                return TRUE;
-            break;
+            return caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
+                caller == J_TRANSFORMATION_CALLER_SERVER_WRITE;
         case J_TRANSFORMATION_MODE_SERVER:
-            if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
-                caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE)
-                return FALSE;
-            if (caller == J_TRANSFORMATION_CALLER_SERVER_READ)
-                return TRUE;
-            break;
+            return caller == J_TRANSFORMATION_CALLER_SERVER_READ;
     }
     return FALSE;
 }
@@ -424,11 +408,10 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
         offset = 0;
     }
 
-    // output buffer is always created by the method, but for read we have
+    // output buffer is always created by the method, but for client read we have
     // user app memory as output given, we need to copy the requested part
     // and free the output buffer (cleanup does free the input buffer)
-    if ((caller == J_TRANSFORMATION_CALLER_CLIENT_READ ||
-        caller == J_TRANSFORMATION_CALLER_SERVER_READ) && *output != NULL)
+    if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ && *output != NULL)
     {
         g_return_if_fail(buffer != NULL);
         // buffer can now be the whole tranformed object while output
@@ -466,15 +449,18 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
     if (trafo == NULL || !j_transformation_here(trafo, caller))
         return;
 
+    // client read only needs a buffer if transformation can't be done inplace
     // write always needs a temp buffer to not interfer with user app memory
-    if (caller == J_TRANSFORMATION_CALLER_CLIENT_WRITE ||
-        caller == J_TRANSFORMATION_CALLER_SERVER_WRITE)
+    // but with !partial_access aka. need_whole_object the caller is responsible
+    // to cleanup once the memory block for the wohle object, this method
+    // gets called per operation
+    if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ)
     {
-        if (trafo->partial_access)
+        if (!trafo->partial_access)
             g_slice_free1(length, data);
     }
-    // read only needs a buffer if transformation can't be done inplace
-    else if (!trafo->partial_access)
+    //
+    else if (trafo->partial_access)
     {
         g_slice_free1(length, data);
     }
