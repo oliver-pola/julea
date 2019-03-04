@@ -126,7 +126,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 			case J_MESSAGE_NONE:
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_CREATE:
-				transformation_client = TRUE;
+				{
+					transformation_client = TRUE;
+				}
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_CREATE:
 				{
@@ -170,7 +172,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 				}
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_DELETE:
-				transformation_client = TRUE;
+				{
+					transformation_client = TRUE;
+				}
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_DELETE:
 				{
@@ -207,14 +211,33 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 				}
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_READ:
-				transformation_client = TRUE;
-				transformation_mode = j_message_get_1(message);
-				transformation_type = j_message_get_1(message);
+				{
+					transformation_client = TRUE;
+					transformation_mode = j_message_get_1(message);
+					transformation_type = j_message_get_1(message);
+				}
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_READ:
 				{
 					JMessage* reply;
 					gpointer object;
+
+					g_autoptr(JTransformation) transformation = NULL;
+					gboolean transformation_need_whole_object;
+					gchar* object_data = NULL;
+					guint64 object_size = 0;
+
+					// Need to always check if object is transformed
+					if (!transformation_client)
+					{
+						// TODO get from KV
+						// - transformation_type
+						// - original_size
+						// - transformed_size
+					}
+					transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
+					transformation_need_whole_object = j_transformation_need_whole_object(transformation,
+						J_TRANSFORMATION_CALLER_SERVER_READ);
 
 					namespace = j_message_get_string(message);
 					path = j_message_get_string(message);
@@ -223,6 +246,29 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 
 					// FIXME return value
 					j_backend_object_open(jd_object_backend, namespace, path, &object);
+
+					if (transformation_need_whole_object)
+					{
+						// TODO bad idea to have whole object in memory
+						// on server side probably even worse than on client side
+						guint64 buflength, dummyoffset, bytes_read;
+						gchar* buffer = NULL;
+						// TODO replace sync + status by info from KV or message
+						gint64 modification_time;
+						j_backend_object_sync(jd_object_backend, object);
+						j_backend_object_status(jd_object_backend, object, &modification_time, &buflength);
+						if (buflength > 0)
+						{
+							buffer = g_slice_alloc(buflength);
+							// FIXME loop until bytes_read == length necessary?
+							j_backend_object_read(jd_object_backend, object, buffer, buflength, 0, &bytes_read);
+							// Watch out: This is a _SERVER_READ even if we are inside _WRITE message
+							j_transformation_apply(transformation, buffer, buflength, 0,
+								(gpointer*)&object_data, &object_size, &dummyoffset,
+								J_TRANSFORMATION_CALLER_SERVER_READ);
+							g_slice_free1(buflength, buffer);
+						}
+					}
 
 					for (i = 0; i < operation_count; i++)
 					{
@@ -234,21 +280,46 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 						length = j_message_get_8(message);
 						offset = j_message_get_8(message);
 
-						buf = j_memory_chunk_get(memory_chunk, length);
-
-						if (buf == NULL)
+						if (transformation_need_whole_object)
 						{
-							// FIXME ugly
-							j_message_send(reply, connection);
-							j_message_unref(reply);
-
-							reply = j_message_new_reply(message);
-
-							j_memory_chunk_reset(memory_chunk);
-							buf = j_memory_chunk_get(memory_chunk, length);
+							// Apply read operations in-memory
+							guint64 length_to_eof;
+							if (offset > object_size)
+								length_to_eof = 0; // avoid negatives, it's unsigned!
+							else
+								length_to_eof = object_size - offset;
+							bytes_read = MIN(length, length_to_eof);
+							buf = object_data + offset;
 						}
+						else
+						{
+							gpointer transformed_buf;
+							guint64 transformed_length, transformed_offset;
 
-						j_backend_object_read(jd_object_backend, object, buf, length, offset, &bytes_read);
+							buf = j_memory_chunk_get(memory_chunk, length);
+
+							if (buf == NULL)
+							{
+								// FIXME ugly
+								j_message_send(reply, connection);
+								j_message_unref(reply);
+
+								reply = j_message_new_reply(message);
+
+								j_memory_chunk_reset(memory_chunk);
+								buf = j_memory_chunk_get(memory_chunk, length);
+							}
+
+							j_backend_object_read(jd_object_backend, object, buf, length, offset, &bytes_read);
+
+							// Transform the read data if the object has a transformation set
+				            j_transformation_apply(transformation, buf, length, offset,
+								&transformed_buf, &transformed_length, &transformed_offset,
+								J_TRANSFORMATION_CALLER_SERVER_READ);
+							memcpy(buf, transformed_buf, length);
+							j_transformation_cleanup(transformation, transformed_buf, transformed_length,
+								transformed_offset,	J_TRANSFORMATION_CALLER_SERVER_READ);
+						}
 						j_statistics_add(statistics, J_STATISTICS_BYTES_READ, bytes_read);
 
 						j_message_add_operation(reply, sizeof(guint64));
@@ -268,12 +339,19 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 					j_message_unref(reply);
 
 					j_memory_chunk_reset(memory_chunk);
+
+					if (transformation_need_whole_object)
+					{
+						g_slice_free1(object_size, object_data);
+					}
 				}
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_WRITE:
-				transformation_client = TRUE;
-				transformation_mode = j_message_get_1(message);
-				transformation_type = j_message_get_1(message);
+				{
+					transformation_client = TRUE;
+					transformation_mode = j_message_get_1(message);
+					transformation_type = j_message_get_1(message);
+				}
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_WRITE:
 				{
@@ -282,6 +360,23 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 					gpointer object;
 					guint64 merge_length = 0;
 					guint64 merge_offset = 0;
+
+					g_autoptr(JTransformation) transformation = NULL;
+					gboolean transformation_need_whole_object;
+					gchar* object_data = NULL;
+					guint64 object_size = 0;
+
+					// Need to always check if object is transformed
+					if (!transformation_client)
+					{
+						// TODO get from KV
+						// - transformation_type
+						// - original_size
+						// - transformed_size
+					}
+					transformation = j_transformation_new(transformation_type, transformation_mode, NULL);
+					transformation_need_whole_object = j_transformation_need_whole_object(transformation,
+						J_TRANSFORMATION_CALLER_SERVER_WRITE);
 
 					if (type_modifier & J_MESSAGE_FLAGS_SAFETY_NETWORK)
 					{
@@ -297,6 +392,29 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 
 					// FIXME return value
 					j_backend_object_open(jd_object_backend, namespace, path, &object);
+
+					if (transformation_need_whole_object)
+					{
+						// TODO bad idea to have whole object in memory
+						// on server side probably even worse than on client side
+						guint64 buflength, dummyoffset, bytes_read;
+						guint8* buffer = NULL;
+						// TODO replace sync + status by info from KV or message
+						gint64 modification_time;
+						j_backend_object_sync(jd_object_backend, object);
+						j_backend_object_status(jd_object_backend, object, &modification_time, &buflength);
+						if (buflength > 0)
+						{
+							buffer = g_slice_alloc(buflength);
+							// FIXME loop until bytes_read == length necessary?
+							j_backend_object_read(jd_object_backend, object, buffer, buflength, 0, &bytes_read);
+							// Watch out: This is a _SERVER_READ even if we are inside _WRITE message
+							j_transformation_apply(transformation, buffer, buflength, 0,
+								(gpointer*)&object_data, &object_size, &dummyoffset,
+								J_TRANSFORMATION_CALLER_SERVER_READ);
+							g_slice_free1(buflength, buffer);
+						}
+					}
 
 					for (i = 0; i < operation_count; i++)
 					{
@@ -318,7 +436,36 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 							g_input_stream_read_all(input, buf, merge_length, NULL, NULL, NULL);
 							j_statistics_add(statistics, J_STATISTICS_BYTES_RECEIVED, merge_length);
 
-							j_backend_object_write(jd_object_backend, object, buf, merge_length, merge_offset, &bytes_written);
+							if (transformation_need_whole_object)
+							{
+								// Apply write operations in-memory
+								// Check boundaries for growing opjects and get more memory
+								// TODO: On the client operations were in memory and it was easy to iterate
+								// and get final size. Here reading the message twice would be a bad idea.
+								// But having a huge object in memory and copying it around on every operation
+								// is also a very bad idea... :-(
+								guint64 object_grown_size = merge_offset + merge_length;
+								if (object_grown_size > object_size)
+								{
+									char* buffer = g_slice_alloc(object_grown_size);
+									memcpy(buffer, object_data, object_size);
+									memset(buffer + object_size, 0, object_grown_size - object_size);
+									g_slice_free1(object_size, object_data);
+									object_data = buffer;
+									object_size = object_grown_size;
+								}
+								memcpy(object_data + merge_offset, buf, merge_length);
+							}
+							else
+							{
+								guint64 buflength, bufoffset;
+								gpointer buffer = NULL;
+								j_transformation_apply(transformation, buf, merge_length, merge_offset,
+									&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_SERVER_WRITE);
+								j_backend_object_write(jd_object_backend, object, buffer, buflength, bufoffset, &bytes_written);
+								j_transformation_cleanup(transformation, buffer, buflength, bufoffset,
+									J_TRANSFORMATION_CALLER_SERVER_WRITE);
+							}
 							j_statistics_add(statistics, J_STATISTICS_BYTES_WRITTEN, bytes_written);
 
 							merge_length = 0;
@@ -346,8 +493,46 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 						g_input_stream_read_all(input, buf, merge_length, NULL, NULL, NULL);
 						j_statistics_add(statistics, J_STATISTICS_BYTES_RECEIVED, merge_length);
 
-						j_backend_object_write(jd_object_backend, object, buf, merge_length, merge_offset, &bytes_written);
+						if (transformation_need_whole_object)
+						{
+							// Apply write operations in-memory
+							// Check boundaries for growing opjects and get more memory
+							// TODO same bad idea as above
+							guint64 object_grown_size = merge_offset + merge_length;
+							if (object_grown_size > object_size)
+							{
+								char* buffer = g_slice_alloc(object_grown_size);
+								memcpy(buffer, object_data, object_size);
+								memset(buffer + object_size, 0, object_grown_size - object_size);
+								g_slice_free1(object_size, object_data);
+								object_data = buffer;
+								object_size = object_grown_size;
+							}
+							memcpy(object_data + merge_offset, buf, merge_length);
+						}
+						else
+						{
+							guint64 buflength, bufoffset;
+							gpointer buffer = NULL;
+							j_transformation_apply(transformation, buf, merge_length, merge_offset,
+								&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_SERVER_WRITE);
+							j_backend_object_write(jd_object_backend, object, buffer, buflength, bufoffset, &bytes_written);
+							j_transformation_cleanup(transformation, buffer, buflength, bufoffset,
+								J_TRANSFORMATION_CALLER_SERVER_WRITE);
+						}
 						j_statistics_add(statistics, J_STATISTICS_BYTES_WRITTEN, bytes_written);
+					}
+
+					if (transformation_need_whole_object)
+					{
+						guint64 buflength, dummyoffset, bytes_written;
+						gpointer buffer = NULL;
+						j_transformation_apply(transformation, object_data, object_size, 0,
+							&buffer, &buflength, &dummyoffset, J_TRANSFORMATION_CALLER_SERVER_WRITE);
+						// FIXME loop until bytes_written == length necessary?
+						j_backend_object_write(jd_object_backend, object, buffer, buflength, 0, &bytes_written);
+						g_slice_free1(buflength, buffer);
+						g_slice_free1(object_size, object_data);
 					}
 
 					if (type_modifier & J_MESSAGE_FLAGS_SAFETY_STORAGE)
@@ -367,7 +552,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 				}
 				break;
 			case J_MESSAGE_TRANSFORMATION_OBJECT_STATUS:
-				transformation_client = TRUE;
+				{
+					transformation_client = TRUE;
+				}
 				// FALLTHROUGH
 			case J_MESSAGE_OBJECT_STATUS:
 				{
