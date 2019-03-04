@@ -117,6 +117,16 @@ struct JTransformationObject
      * KV Object which stores transformation metadata
      **/
     JKV* metadata;
+
+    /**
+     * The size of the object in its detransformed state
+     **/
+    guint64 original_size;
+
+    /** 
+     * The size of the object in its transformed state
+     **/
+    guint64 transformed_size;
 };
 
 static
@@ -381,12 +391,61 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
         int type = bson_iter_int32(&iter);
         bson_iter_find(&iter, "JTransformationMode");
         int mode = bson_iter_int32(&iter);
+        bson_iter_find(&iter, "original_size");
+        guint64 original_size = bson_iter_int64(&iter);
+        bson_iter_find(&iter, "transformed_size");
+        guint64 transformed_size = bson_iter_int64(&iter);
 
         // TODO handle params struct
         j_transformation_object_set_transformation(object, type, mode, NULL);
+        object->original_size = original_size;
+        object->transformed_size = original_size;
         ret = true;
     }
     return ret;
+}
+
+static
+bool
+j_transformation_object_load_object_size(JTransformationObject* object, JSemantics* semantics)
+{
+    bool ret = false;
+    // TODO memoty management pointer
+    bson_t* metadata_bson = bson_new();
+    JBatch* kv_batch = j_batch_new(semantics);
+
+    j_kv_get(object->metadata, metadata_bson, kv_batch);
+    j_batch_execute(kv_batch);
+
+    bson_iter_t iter;
+    if(bson_iter_init(&iter, metadata_bson))
+    {
+        bson_iter_find(&iter, "original_size");
+        guint64 original_size = bson_iter_int64(&iter);
+        bson_iter_find(&iter, "transformed_size");
+        guint64 transformed_size = bson_iter_int64(&iter);
+
+        object->original_size = original_size;
+        object->transformed_size = transformed_size;
+        ret = true;
+    }
+    return ret;
+}
+
+static
+void
+j_transformation_object_update_object_size(JTransformationObject* object, JSemantics* semantics)
+{
+    JBatch* kv_batch = j_batch_new(semantics);
+
+    bson_t* metadata_bson = bson_new();
+    bson_append_int32(metadata_bson, "JTransformationType", -1, (int)j_transformation_get_type(object->transformation));
+    bson_append_int32(metadata_bson, "JTransformationMode", -1, (int)j_transformation_get_mode(object->transformation));
+    bson_append_int64(metadata_bson, "original_size", -1, object->original_size);
+    bson_append_int64(metadata_bson, "transformed_size", -1, object->transformed_size);
+
+    j_kv_put(object->metadata, metadata_bson, kv_batch);
+    j_batch_execute(kv_batch);
 }
 
 static
@@ -605,6 +664,12 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
             j_transformation_object_load_transformation(object, semantics);
             transformation = object->transformation;
         }
+        // If a transformation is already set we need to get the current object sizes from the KV store
+        else
+        {
+            j_transformation_object_load_object_size(object, semantics);
+            printf("IN READ\n");
+        }
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -689,6 +754,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				memcpy(data, object_data + offset, length);
 				j_helper_atomic_add(bytes_read, length);
 			}
+            printf("READ: orig_size: %ld, transformed_size: %ld\n", object->original_size, object->transformed_size);
 		}
 		else if (object_backend != NULL)
 		{
@@ -962,6 +1028,10 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             j_transformation_object_load_transformation(object, semantics);
             transformation = object->transformation;
         }
+        else
+        {
+            j_transformation_object_load_object_size(object, semantics);
+        }
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
@@ -1116,6 +1186,11 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 			&buffer, &buflength, &bufoffset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
 
 		j_transformation_object_write_all (object, buffer, buflength, semantics);
+        //ADDED
+        object->original_size = object_size;
+        object->transformed_size = buflength;
+        j_transformation_object_update_object_size(object, semantics);
+        printf("Write: orig_size: %ld, transformed_size: %ld\n", object->original_size, object->transformed_size);
 
 		// Cleanup of whole in-memory object
 		g_slice_free1(object_size, object_data);
@@ -1352,6 +1427,8 @@ j_transformation_object_new (gchar const* namespace, gchar const* name)
 	object->name = g_strdup(name);
 	object->ref_count = 1;
     object->metadata = j_kv_new(namespace, name);
+    object->original_size = 0;
+    object->transformed_size = 0;
 
 	j_trace_leave(G_STRFUNC);
 
@@ -1493,11 +1570,12 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
     bson_t* metadata_bson = bson_new();
     bson_append_int32(metadata_bson, "JTransformationType", -1, (int)type);
     bson_append_int32(metadata_bson, "JTransformationMode", -1, (int)mode);
+    bson_append_int64(metadata_bson, "original_size", -1, 0);
+    bson_append_int64(metadata_bson, "transformed_size", -1, 0);
     // TODO handle params struct
 
     j_kv_put(object->metadata, metadata_bson, kv_batch);
     j_batch_execute(kv_batch);
-    bson_free(metadata_bson);
 
 
 	operation = j_operation_new();
