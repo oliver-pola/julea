@@ -756,7 +756,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				memcpy(data, object_data + offset, length);
 				j_helper_atomic_add(bytes_read, length);
 			}
-            printf("READ: orig_size: %ld, transformed_size: %ld\n", object->original_size, object->transformed_size);
+            // DEBUG printf("READ: orig_size: %ld, transformed_size: %ld\n", object->original_size, object->transformed_size);
 		}
 		else if (object_backend != NULL)
 		{
@@ -1192,7 +1192,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         object->original_size = object_size;
         object->transformed_size = buflength;
         j_transformation_object_update_object_size(object, semantics);
-        printf("Write: orig_size: %ld, transformed_size: %ld\n", object->original_size, object->transformed_size);
+        // DEBUG printf("Write: orig_size: %ld, transformed_size: %ld\n", object->original_size, object->transformed_size);
 
 		// Cleanup of whole in-memory object
 		g_slice_free1(object_size, object_data);
@@ -1371,17 +1371,23 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 			{
 				*modification_time = modification_time_;
 			}
+			// TODO if we ask server for mtime, we should also use his sizes
+			// there is a TODO in server.c
+			// Using data from JTransformationObject in the meanwhile
 			if (original_size != NULL)
 			{
-				*original_size = original_size_;
+				// TODO *original_size = original_size_;
+				*original_size = operation->status.object->original_size;
 			}
 			if (transformed_size != NULL)
 			{
-				*transformed_size = transformed_size_;
+				// TODO *transformed_size = transformed_size_;
+				*transformed_size = operation->status.object->transformed_size;
 			}
 			if (transformation_type != NULL)
 			{
-				*transformation_type = transformation_type_;
+				// TODO *transformation_type = transformation_type_;
+				*transformation_type = j_transformation_get_type(operation->status.object->transformation);
 			}
 		}
 
