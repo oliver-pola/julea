@@ -246,6 +246,10 @@ static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output
 static gboolean j_transformation_here(JTransformation* trafo,
     JTransformationCaller caller)
 {
+    // Early exit if nothing to do
+    if (trafo->type == J_TRANSFORMATION_TYPE_NONE)
+        return FALSE;
+
     // Decide who needs to do transform in given mode
     switch (trafo->mode)
     {
@@ -354,6 +358,7 @@ void j_transformation_unref (JTransformation* item)
 /**
  * Applies a transformation (inverse) on the data with length and offset.
  * This is done inplace (with an internal copy if necessary).
+ * Does support trafo == NULL
  **/
 void j_transformation_apply (JTransformation* trafo, gpointer input,
     guint64 inlength, guint64 inoffset, gpointer* output,
@@ -369,13 +374,13 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
     length = inlength;
     offset = inoffset;
 
-    g_return_if_fail(trafo != NULL);
+    // not g_return_if_fail(trafo != NULL);
     g_return_if_fail(input != NULL);
     g_return_if_fail(output != NULL);
     g_return_if_fail(outlength != NULL);
     g_return_if_fail(outoffset != NULL);
 
-    if (!j_transformation_here(trafo, caller))
+    if (trafo == NULL || !j_transformation_here(trafo, caller))
     {
         // nothing to do here, but make sure output is usable
         *output = input;
@@ -449,6 +454,7 @@ void j_transformation_apply (JTransformation* trafo, gpointer input,
  * For read operations this can be called directly after the transformation was
  * applied and the parameters must be the temp buffer prepared by
  * prep_read_buffer()
+ * Does support trafo == NULL
  **/
 void j_transformation_cleanup (JTransformation* trafo, gpointer data,
     guint64 length, guint64 offset, JTransformationCaller caller)
@@ -457,7 +463,7 @@ void j_transformation_cleanup (JTransformation* trafo, gpointer data,
 
     g_return_if_fail(data != NULL);
 
-    if (!j_transformation_here(trafo, caller))
+    if (trafo == NULL || !j_transformation_here(trafo, caller))
         return;
 
     // write always needs a temp buffer to not interfer with user app memory
@@ -493,9 +499,7 @@ JTransformationType j_transformation_get_type(JTransformation* trafo)
 gboolean j_transformation_need_whole_object (JTransformation* trafo,
     JTransformationCaller caller)
 {
-    if (trafo == NULL)
-        return FALSE;
-    else if (!j_transformation_here(trafo, caller))
+    if (trafo == NULL || !j_transformation_here(trafo, caller))
         return FALSE;
     else
         return !trafo->partial_access;

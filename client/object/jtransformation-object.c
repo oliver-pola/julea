@@ -165,12 +165,9 @@ j_transformation_object_write_free (gpointer data)
 {
 	JTransformationObjectOperation* operation = data;
 
-    if(operation->write.object->transformation != NULL)
-    {
-		j_transformation_cleanup(operation->write.object->transformation,
-			operation->write.data, operation->write.length, operation->write.offset,
-			J_TRANSFORMATION_CALLER_CLIENT_WRITE);
-    }
+	j_transformation_cleanup(operation->write.object->transformation,
+		operation->write.data, operation->write.length, operation->write.offset,
+		J_TRANSFORMATION_CALLER_CLIENT_WRITE);
 	g_slice_free(JTransformationObjectOperation, operation);
 
 	j_transformation_object_unref(operation->write.object);
@@ -701,13 +698,10 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 			j_helper_atomic_add(bytes_read, nbytes);
 
             // Transform the read data if the object has a transformation set
-            if(transformation != NULL)
-            {
-                j_transformation_apply(transformation, data, length, offset,
-					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
-				j_transformation_cleanup(transformation, data, length, offset,
-					J_TRANSFORMATION_CALLER_CLIENT_READ);
-            }
+            j_transformation_apply(transformation, data, length, offset,
+				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+			j_transformation_cleanup(transformation, data, length, offset,
+				J_TRANSFORMATION_CALLER_CLIENT_READ);
 		}
 		else
 		{
@@ -782,14 +776,11 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 				}
 
                 // Transform the read data if the object has a transformation set
-                if(transformation != NULL)
-                {
-                    j_transformation_apply(transformation, data, length, offset,
-						&data, &length, &offset,
-						J_TRANSFORMATION_CALLER_CLIENT_READ);
-					j_transformation_cleanup(transformation, data, length, offset,
-						J_TRANSFORMATION_CALLER_CLIENT_READ);
-                }
+                j_transformation_apply(transformation, data, length, offset,
+					&data, &length, &offset,
+					J_TRANSFORMATION_CALLER_CLIENT_READ);
+				j_transformation_cleanup(transformation, data, length, offset,
+					J_TRANSFORMATION_CALLER_CLIENT_READ);
 			}
 
 			operations_done += reply_operation_count;
@@ -1083,28 +1074,22 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		{
 			guint64 nbytes = 0;
 
-			if(transformation != NULL)
-	        {
-				// this is the simple case where length and offset do not change
-	            j_transformation_apply(transformation, data, length, offset,
-					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
-				// data changed to new buffer, stored in operation to free later
-	            operation->write.data = data;
-	        }
+			// this is the simple case where length and offset do not change
+            j_transformation_apply(transformation, data, length, offset,
+				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+			// data changed to new buffer, stored in operation to free later
+            operation->write.data = data;
 
 			ret = j_backend_object_write(object_backend, object_handle, data, length, offset, &nbytes) && ret;
 			j_helper_atomic_add(bytes_written, nbytes);
 		}
 		else
 		{
-			if(transformation != NULL)
-	        {
-				// this is the simple case where length and offset do not change
-	            j_transformation_apply(transformation, data, length, offset,
-					&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
-				// data changed to new buffer, stored in operation to free later
-	            operation->write.data = data;
-	        }
+			// this is the simple case where length and offset do not change
+            j_transformation_apply(transformation, data, length, offset,
+				&data, &length, &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+			// data changed to new buffer, stored in operation to free later
+            operation->write.data = data;
 
 			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
 			j_message_append_8(message, &length);
