@@ -1766,8 +1766,8 @@ j_transformation_object_status_ext (JTransformationObject* object, gint64* modif
 	iop = g_slice_new(JTransformationObjectOperation);
 	iop->status.object = j_transformation_object_ref(object);
 	iop->status.modification_time = modification_time;
-	iop->status.original_size = original_size;
-	iop->status.transformed_size = transformed_size;
+	iop->status.original_size = object->original_size;
+	iop->status.transformed_size = object->transformed_size;
 	iop->status.transformation_type = transformation_type;
 
 	operation = j_operation_new();
