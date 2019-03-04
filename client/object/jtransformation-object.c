@@ -123,7 +123,7 @@ struct JTransformationObject
      **/
     guint64 original_size;
 
-    /** 
+    /**
      * The size of the object in its transformed state
      **/
     guint64 transformed_size;
@@ -471,7 +471,7 @@ j_transformation_object_read_all (JTransformationObject* object,
 
 	j_trace_enter(G_STRFUNC, NULL);
 
-    
+
 	object_backend = j_object_backend();
 
 	if (object_backend != NULL)
@@ -527,7 +527,7 @@ j_transformation_object_read_all (JTransformationObject* object,
 
 		j_connection_pool_push_object(object->index, object_connection);
 	}
-   
+
 
     object_size = object->transformed_size;
 	*length = object_size;
@@ -1301,21 +1301,23 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 		if (object_backend != NULL)
 		{
 			gpointer object_handle;
+			// The size we could get from status is rather a physical size
+			// transformed < original < physical is possible
+			// original < transformed < physical is also possible
 			guint64 size;
 
 			ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret;
 			ret = j_backend_object_status(object_backend, object_handle, modification_time, &size) && ret;
 			ret = j_backend_object_close(object_backend, object_handle) && ret;
 
-			// TODO Get original_size and transformation_type from KV
-			// or is it on JTransformationObject already?
+			// We have the sizes in JTransformationObject already
 			if (original_size != NULL)
 			{
-				*original_size = size;
+				*original_size = object->original_size;
 			}
 			if (transformed_size != NULL)
 			{
-				*transformed_size = size;
+				*transformed_size = object->transformed_size;
 			}
 			if (transformation_type != NULL)
 			{
@@ -1766,8 +1768,8 @@ j_transformation_object_status_ext (JTransformationObject* object, gint64* modif
 	iop = g_slice_new(JTransformationObjectOperation);
 	iop->status.object = j_transformation_object_ref(object);
 	iop->status.modification_time = modification_time;
-	iop->status.original_size = object->original_size;
-	iop->status.transformed_size = object->transformed_size;
+	iop->status.original_size = original_size;
+	iop->status.transformed_size = transformed_size;
 	iop->status.transformation_type = transformation_type;
 
 	operation = j_operation_new();
