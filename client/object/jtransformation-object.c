@@ -471,6 +471,7 @@ j_transformation_object_read_all (JTransformationObject* object,
 
 	j_trace_enter(G_STRFUNC, NULL);
 
+    
 	object_backend = j_object_backend();
 
 	if (object_backend != NULL)
@@ -526,7 +527,9 @@ j_transformation_object_read_all (JTransformationObject* object,
 
 		j_connection_pool_push_object(object->index, object_connection);
 	}
+   
 
+    object_size = object->transformed_size;
 	*length = object_size;
 
 	if (object_size == 0)
@@ -668,7 +671,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
         else
         {
             j_transformation_object_load_object_size(object, semantics);
-            printf("IN READ\n");
         }
 
 		g_assert(operation != NULL);
