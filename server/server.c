@@ -531,6 +531,9 @@ jd_on_run (GThreadedSocketService* service, GSocketConnection* connection, GObje
 							&buffer, &buflength, &dummyoffset, J_TRANSFORMATION_CALLER_SERVER_WRITE);
 						// FIXME loop until bytes_written == length necessary?
 						j_backend_object_write(jd_object_backend, object, buffer, buflength, 0, &bytes_written);
+						// TODO update KV
+						// - original_size = object_size
+						// - transformed_size = buflength
 						g_slice_free1(buflength, buffer);
 						g_slice_free1(object_size, object_data);
 					}
