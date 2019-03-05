@@ -1298,6 +1298,15 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 		guint64* transformed_size = operation->status.transformed_size;
 		JTransformationType* transformation_type = operation->status.transformation_type;
 
+		if(object == NULL)
+		{
+			j_transformation_object_load_transformation(object, semantics);
+		}
+		else
+		{
+			j_transformation_object_load_object_size(object, semantics);
+		}
+
 		if (object_backend != NULL)
 		{
 			gpointer object_handle;
