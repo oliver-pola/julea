@@ -305,6 +305,11 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 		namespace = object->namespace;
 		namespace_len = strlen(namespace) + 1;
 		index = object->index;
+
+        // Also delete the metadata from the KV store
+        JBatch* kv_batch = j_batch_new(semantics);
+        j_kv_delete(object->metadata, kv_batch);
+        j_batch_execute(kv_batch);
 	}
 
 	it = j_list_iterator_new(operations);
@@ -358,6 +363,7 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 
 		j_connection_pool_push_object(index, object_connection);
 	}
+
 
 	j_trace_leave(G_STRFUNC);
 
