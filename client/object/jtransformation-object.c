@@ -298,6 +298,7 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 
 	{
 		JTransformationObject* object;
+        g_autoptr(JBatch) kv_batch = NULL;
 
 		object = j_list_get_first(operations);
 		g_assert(object != NULL);
@@ -307,7 +308,7 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 		index = object->index;
 
         // Also delete the metadata from the KV store
-        JBatch* kv_batch = j_batch_new(semantics);
+        kv_batch = j_batch_new(semantics);
         j_kv_delete(object->metadata, kv_batch);
         j_batch_execute(kv_batch);
 	}
@@ -385,7 +386,9 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
     bool ret = false;
     // TODO memoty management pointer
     bson_t* metadata_bson = bson_new();
-    JBatch* kv_batch = j_batch_new(semantics);
+    g_autoptr(JBatch) kv_batch = NULL;
+
+    kv_batch = j_batch_new(semantics);
 
     j_kv_get(object->metadata, metadata_bson, kv_batch);
     j_batch_execute(kv_batch);
@@ -393,21 +396,24 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
     bson_iter_t iter;
     if(bson_iter_init(&iter, metadata_bson))
     {
+        int type, mode;
+        guint64 original_size, transformed_size;
+
         bson_iter_find(&iter, "JTransformationType");
-        int type = bson_iter_int32(&iter);
+        type = bson_iter_int32(&iter);
         bson_iter_find(&iter, "JTransformationMode");
-        int mode = bson_iter_int32(&iter);
+        mode = bson_iter_int32(&iter);
         bson_iter_find(&iter, "original_size");
-        guint64 original_size = bson_iter_int64(&iter);
+        original_size = bson_iter_int64(&iter);
         bson_iter_find(&iter, "transformed_size");
-        guint64 transformed_size = bson_iter_int64(&iter);
+        transformed_size = bson_iter_int64(&iter);
 
         bson_destroy(metadata_bson);
 
         // TODO handle params struct
         j_transformation_object_set_transformation(object, type, mode, NULL);
         object->original_size = original_size;
-        object->transformed_size = original_size;
+        object->transformed_size = transformed_size;
         ret = true;
     }
     return ret;
@@ -420,7 +426,9 @@ j_transformation_object_load_object_size(JTransformationObject* object, JSemanti
     bool ret = false;
     // TODO memoty management pointer
     bson_t* metadata_bson = bson_new();
-    JBatch* kv_batch = j_batch_new(semantics);
+    g_autoptr(JBatch) kv_batch = NULL;
+    
+    kv_batch = j_batch_new(semantics);
 
     j_kv_get(object->metadata, metadata_bson, kv_batch);
     j_batch_execute(kv_batch);
@@ -428,10 +436,12 @@ j_transformation_object_load_object_size(JTransformationObject* object, JSemanti
     bson_iter_t iter;
     if(bson_iter_init(&iter, metadata_bson))
     {
+        guint64 original_size, transformed_size;
+
         bson_iter_find(&iter, "original_size");
-        guint64 original_size = bson_iter_int64(&iter);
+        original_size = bson_iter_int64(&iter);
         bson_iter_find(&iter, "transformed_size");
-        guint64 transformed_size = bson_iter_int64(&iter);
+        transformed_size = bson_iter_int64(&iter);
 
         bson_destroy(metadata_bson);
 
@@ -1585,9 +1595,14 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
     // Store transformation information on the KV server
     // TODO delete
 
-    JBatch* kv_batch = j_batch_new(j_batch_get_semantics(batch));
+    JSemantics* semantics = NULL;
+    g_autoptr(JBatch) kv_batch = NULL;
 
-    bson_t* metadata_bson = bson_new();
+    semantics = j_batch_get_semantics(batch);
+    kv_batch = j_batch_new(semantics);
+
+    bson_t* metadata_bson;
+    metadata_bson = bson_new();
     bson_append_int32(metadata_bson, "JTransformationType", -1, (int)type);
     bson_append_int32(metadata_bson, "JTransformationMode", -1, (int)mode);
     bson_append_int64(metadata_bson, "original_size", -1, 0);
