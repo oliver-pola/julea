@@ -402,6 +402,8 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
         bson_iter_find(&iter, "transformed_size");
         guint64 transformed_size = bson_iter_int64(&iter);
 
+        bson_destroy(metadata_bson);
+
         // TODO handle params struct
         j_transformation_object_set_transformation(object, type, mode, NULL);
         object->original_size = original_size;
@@ -430,6 +432,8 @@ j_transformation_object_load_object_size(JTransformationObject* object, JSemanti
         guint64 original_size = bson_iter_int64(&iter);
         bson_iter_find(&iter, "transformed_size");
         guint64 transformed_size = bson_iter_int64(&iter);
+
+        bson_destroy(metadata_bson);
 
         object->original_size = original_size;
         object->transformed_size = transformed_size;
