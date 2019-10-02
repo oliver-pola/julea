@@ -164,6 +164,7 @@ def options(ctx):
 	ctx.add_option('--otf', action='store', default=None, help='OTF prefix')
 	ctx.add_option('--sqlite', action='store', default=None, help='SQLite prefix')
 	ctx.add_option('--mariadb', action='store', default=None, help='MariaDB prefix')
+        ctx.add_option('--lz4', action='store', default=None, help='lz4 prefix')
 
 
 def configure(ctx):
@@ -194,6 +195,14 @@ def configure(ctx):
 			uselib_store=module.upper(),
 			pkg_config_path=get_pkg_config_path(ctx.options.glib)
 		)
+
+	check_cfg_rpath(
+		ctx,
+		package='liblz4',
+		args=['--cflags', '--libs'],
+                uselib_store = 'LZ4',
+                pkg_config_path = get_pkg_config_path(ctx.options.lz4)
+	)
 
 	check_cfg_rpath(
 		ctx,
@@ -414,7 +423,7 @@ def build(ctx):
 	ctx.install_files('${INCLUDEDIR}/julea', include_dir.ant_glob('**/*.h', excl='**/*-internal.h'), cwd=include_dir, relative_trick=True)
 
 	use_julea_core = ['M', 'GLIB']
-	use_julea_lib = use_julea_core + ['GIO', 'GOBJECT', 'LIBBSON', 'OTF']
+	use_julea_lib = use_julea_core + ['GIO', 'GOBJECT', 'LIBBSON', 'OTF', 'LZ4']
 	use_julea_backend = use_julea_core + ['GMODULE']
 	use_julea_object = use_julea_core + ['lib/julea', 'lib/julea-object']
 	use_julea_kv = use_julea_core + ['lib/julea', 'lib/julea-kv']

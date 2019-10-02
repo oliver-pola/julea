@@ -27,5 +27,6 @@
 #include <object/jobject.h>
 #include <object/jobject-iterator.h>
 #include <object/jobject-uri.h>
+#include <object/jtransformation-object.h>
 
 #endif
