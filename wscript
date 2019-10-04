@@ -147,24 +147,24 @@ def get_pkg_config_path(prefix):
 
 
 def options(ctx):
-	ctx.load('compiler_c')
-	#ctx.load('compiler_cxx')
+        ctx.load('compiler_c')
+#ctx.load('compiler_cxx')
 
-	ctx.add_option('--debug', action='store_true', default=False, help='Enable debug mode')
-	ctx.add_option('--sanitize', action='store_true', default=False, help='Enable sanitize mode')
-	ctx.add_option('--coverage', action='store_true', default=False, help='Enable coverage analysis')
+        ctx.add_option('--debug', action='store_true', default=False, help='Enable debug mode')
+        ctx.add_option('--sanitize', action='store_true', default=False, help='Enable sanitize mode')
+        ctx.add_option('--coverage', action='store_true', default=False, help='Enable coverage analysis')
 
-	ctx.add_option('--glib', action='store', default=None, help='GLib prefix')
-	ctx.add_option('--leveldb', action='store', default=None, help='LevelDB prefix')
-	ctx.add_option('--lmdb', action='store', default=None, help='LMDB prefix')
-	ctx.add_option('--libbson', action='store', default=None, help='libbson prefix')
-	ctx.add_option('--libmongoc', action='store', default=None, help='libmongoc driver prefix')
-	ctx.add_option('--librados', action='store', default=None, help='librados driver prefix')
-	ctx.add_option('--hdf5', action='store', default=None, help='HDF5 prefix', dest='hdf')
-	ctx.add_option('--otf', action='store', default=None, help='OTF prefix')
-	ctx.add_option('--sqlite', action='store', default=None, help='SQLite prefix')
-	ctx.add_option('--mariadb', action='store', default=None, help='MariaDB prefix')
-        ctx.add_option('--lz4', action='store', default=None, help='lz4 prefix')
+        ctx.add_option('--glib', action='store', default=None, help='GLib prefix')
+        ctx.add_option('--leveldb', action='store', default=None, help='LevelDB prefix')
+        ctx.add_option('--lmdb', action='store', default=None, help='LMDB prefix')
+        ctx.add_option('--libbson', action='store', default=None, help='libbson prefix')
+        ctx.add_option('--libmongoc', action='store', default=None, help='libmongoc driver prefix')
+        ctx.add_option('--librados', action='store', default=None, help='librados driver prefix')
+        ctx.add_option('--hdf5', action='store', default=None, help='HDF5 prefix', dest='hdf')
+        ctx.add_option('--otf', action='store', default=None, help='OTF prefix')
+        ctx.add_option('--sqlite', action='store', default=None, help='SQLite prefix')
+        ctx.add_option('--mariadb', action='store', default=None, help='MariaDB prefix')
+        ctx.add_option('--lz4',action='store',default=None,help='lz4 prefix')
 
 
 def configure(ctx):
