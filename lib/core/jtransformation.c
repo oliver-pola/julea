@@ -33,31 +33,6 @@
  * @{
  **/
 
-/**
- * A Transformation
- **/
-struct JTransformation
-{
-    /**
-	 * Which transformation to apply.
-	 **/
-    JTransformationType type;
-
-    /**
-	 * Whether client or server applies transformation.
-	 **/
-    JTransformationMode mode;
-
-    /**
-	 * Whether parts of data can be read or written without knowing the neighbourhood.
-	 **/
-	gboolean partial_access;
-
-    /**
-	 * The reference count.
-	 **/
-	gint ref_count;
-};
 
 /**
  * XOR with 1 for each bit

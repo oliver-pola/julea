@@ -128,6 +128,19 @@ struct JTransformationObject
     guint64 transformed_size;
 };
 
+/**
+ * TODO
+ **/
+struct JTransformationObjectMetadata
+{
+    gint32 transformation_type;
+    gint32 transformation_mode;
+    guint64 original_size;
+    guint64 transformed_size;
+};
+
+typedef struct JTransformationObjectMetadata JTransformationObjectMetadata;
+
 static
 void
 j_transformation_object_create_free (gpointer data)
@@ -579,7 +592,7 @@ static
 void
 j_transformation_object_set_transformation(JTransformationObject* object, JTransformationType type, JTransformationMode mode, void* params)
 {
-    /* object->transformation = j_transformation_new(type, mode, params); */
+    object->transformation = j_transformation_new(type, mode, params);
 }
 
 
@@ -621,6 +634,30 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
 /*         ret = true; */
 /*     } */
 /*     return ret; */
+
+    bool ret = false;
+
+    g_autoptr(JKVIterator) kv_iter = NULL;
+    kv_iter = j_kv_iterator_new(object->namespace, object->name);
+    while(j_kv_iterator_next(kv_iter))
+    {
+        gchar const* key;
+        gconstpointer value;
+        guint32 len;
+
+        key = j_kv_iterator_get(kv_iter, &value, &len);
+
+        if(g_strcmp0(key, object->name) == 0)
+        {
+            JTransformationObjectMetadata* mdata = (JTransformationObjectMetadata*)value;
+            j_transformation_object_set_transformation(object, mdata->transformation_type, 
+                    mdata->transformation_mode, NULL);
+            object->original_size = mdata->original_size;
+            object->transformed_size = mdata->transformed_size;
+            ret = true;
+        }
+    }
+    return ret;
 }
 
 static
@@ -2021,11 +2058,16 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 			JTransformationObjectOperation* operation = j_list_iterator_get(it);
 			gint64* modification_time = operation->status.modification_time;
 			guint64* size = operation->status.original_size;
+            guint64* transformed_size = operation->status.transformed_size;
+            JTransformationType* transformation_type = operation->status.transformation_type;
 			gint64 modification_time_;
 			guint64 size_;
 
 			modification_time_ = j_message_get_8(reply);
 			size_ = j_message_get_8(reply);
+
+            // Update the object from the kv-store metadata
+            j_transformation_object_load_transformation(operation->status.object, semantics);
 
 			if (modification_time != NULL)
 			{
@@ -2036,6 +2078,16 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 			{
 				*size = size_;
 			}
+
+            if(transformed_size != NULL)
+            {
+                *transformed_size = operation->status.object->transformed_size;
+            }
+
+            if(transformation_type != NULL)
+            {
+                *transformation_type = operation->status.object->transformation->type;
+            }
 		}
 
 		j_list_iterator_free(it);
@@ -2101,6 +2153,10 @@ j_transformation_object_new (gchar const* namespace, gchar const* name)
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
+
+    object->metadata = j_kv_new(namespace, name);
+    object->original_size = 0;
+    object->transformed_size = 0;
 
 	return object;
 }
@@ -2302,6 +2358,23 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
 	JOperation* operation;
 
 	g_return_if_fail(object != NULL);
+
+    // Add a metadata entry to the kv-store for this object
+    JSemantics* semantics = NULL;
+    g_autoptr(JBatch) kv_batch = NULL;
+
+    semantics = j_batch_get_semantics(batch);
+    kv_batch = j_batch_new(semantics);
+
+    gpointer mdata = malloc(sizeof(JTransformationObjectMetadata));
+    ((JTransformationObjectMetadata*)mdata)->transformation_type = type;
+    ((JTransformationObjectMetadata*)mdata)->transformation_mode = mode;
+    ((JTransformationObjectMetadata*)mdata)->original_size = 0;
+    ((JTransformationObjectMetadata*)mdata)->transformed_size = 0;
+
+    j_kv_put(object->metadata, mdata, sizeof(JTransformationObjectMetadata), g_free, kv_batch);
+    j_batch_execute(kv_batch);
+
 
 	operation = j_operation_new();
 	// FIXME key = index + namespace
@@ -2554,26 +2627,7 @@ void
 j_transformation_object_status (JTransformationObject* object, gint64* modification_time,
 	guint64* size, JBatch* batch)
 {
-	/* j_transformation_object_status_ext(object, modification_time, size, NULL, NULL, batch); */
-	J_TRACE_FUNCTION(NULL);
-
-	JTransformationObjectOperation* iop;
-	JOperation* operation;
-
-	g_return_if_fail(object != NULL);
-
-	iop = g_slice_new(JTransformationObjectOperation);
-	iop->status.object = j_transformation_object_ref(object);
-	iop->status.modification_time = modification_time;
-	iop->status.original_size = size;
-
-	operation = j_operation_new();
-	operation->key = object;
-	operation->data = iop;
-	operation->exec_func = j_transformation_object_status_exec;
-	operation->free_func = j_transformation_object_status_free;
-
-	j_batch_add(batch, operation);
+	j_transformation_object_status_ext(object, modification_time, size, NULL, NULL, batch);
 }
 
 /**
@@ -2614,6 +2668,27 @@ j_transformation_object_status_ext (JTransformationObject* object, gint64* modif
 	/* j_batch_add(batch, operation); */
     /*  */
 	/* j_trace_leave(G_STRFUNC); */
+	J_TRACE_FUNCTION(NULL);
+
+	JTransformationObjectOperation* iop;
+	JOperation* operation;
+
+	g_return_if_fail(object != NULL);
+
+	iop = g_slice_new(JTransformationObjectOperation);
+	iop->status.object = j_transformation_object_ref(object);
+	iop->status.modification_time = modification_time;
+	iop->status.original_size = original_size;
+    iop->status.transformed_size = transformed_size;
+    iop->status.transformation_type = transformation_type;
+
+	operation = j_operation_new();
+	operation->key = object;
+	operation->data = iop;
+	operation->exec_func = j_transformation_object_status_exec;
+	operation->free_func = j_transformation_object_status_free;
+
+	j_batch_add(batch, operation);
 }
 
 /**

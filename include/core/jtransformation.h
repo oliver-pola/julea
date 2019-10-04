@@ -66,8 +66,31 @@ enum JTransformationCaller
 
 typedef enum JTransformationCaller JTransformationCaller;
 
-struct JTransformation;
+/**
+ * A Transformation
+ **/
+struct JTransformation
+{
+    /**
+	 * Which transformation to apply.
+	 **/
+    JTransformationType type;
 
+    /**
+	 * Whether client or server applies transformation.
+	 **/
+    JTransformationMode mode;
+
+    /**
+	 * Whether parts of data can be read or written without knowing the neighbourhood.
+	 **/
+	gboolean partial_access;
+
+    /**
+	 * The reference count.
+	 **/
+	gint ref_count;
+};
 typedef struct JTransformation JTransformation;
 
 JTransformation* j_transformation_new (JTransformationType, JTransformationMode, void*);
