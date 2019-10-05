@@ -51,6 +51,10 @@ jd_handle_message (JMessage* message, GSocketConnection* connection, JMemoryChun
 	{
 		case J_MESSAGE_NONE:
 			break;
+        case J_MESSAGE_TRANSFORMATION_OBJECT_CREATE:
+            {
+            }
+            //Fallthrough
 		case J_MESSAGE_OBJECT_CREATE:
 			{
 				g_autoptr(JMessage) reply = NULL;
@@ -92,6 +96,10 @@ jd_handle_message (JMessage* message, GSocketConnection* connection, JMemoryChun
 				}
 			}
 			break;
+		case J_MESSAGE_TRANSFORMATION_OBJECT_DELETE:
+            {
+            }
+            //Falltrough
 		case J_MESSAGE_OBJECT_DELETE:
 			{
 				g_autoptr(JMessage) reply = NULL;
@@ -126,6 +134,10 @@ jd_handle_message (JMessage* message, GSocketConnection* connection, JMemoryChun
 				}
 			}
 			break;
+		case J_MESSAGE_TRANSFORMATION_OBJECT_READ:
+            {
+            }
+            //Fallthrough
 		case J_MESSAGE_OBJECT_READ:
 			{
 				JMessage* reply;
@@ -193,6 +205,10 @@ jd_handle_message (JMessage* message, GSocketConnection* connection, JMemoryChun
 				j_memory_chunk_reset(memory_chunk);
 			}
 			break;
+        case J_MESSAGE_TRANSFORMATION_OBJECT_WRITE:
+            {
+            }
+            //Fallthrough
 		case J_MESSAGE_OBJECT_WRITE:
 			{
 				g_autoptr(JMessage) reply = NULL;
@@ -264,6 +280,10 @@ jd_handle_message (JMessage* message, GSocketConnection* connection, JMemoryChun
 				j_memory_chunk_reset(memory_chunk);
 			}
 			break;
+		case J_MESSAGE_TRANSFORMATION_OBJECT_STATUS:
+            {
+            }
+            //Fallthrough
 		case J_MESSAGE_OBJECT_STATUS:
 			{
 				g_autoptr(JMessage) reply = NULL;

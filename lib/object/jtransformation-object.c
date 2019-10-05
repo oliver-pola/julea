@@ -359,7 +359,7 @@ j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
 		 * This does not completely eliminate all races but fixes the common case of create, write, write, ...
 		 **/
         // TODO message type
-		message = j_message_new(J_MESSAGE_OBJECT_CREATE, namespace_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_CREATE, namespace_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
 	}
@@ -535,7 +535,7 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 	if (object_backend == NULL)
 	{
         //TODO message type
-		message = j_message_new(J_MESSAGE_OBJECT_DELETE, namespace_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_DELETE, namespace_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
 	}
@@ -1175,7 +1175,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		name_len = strlen(object->name) + 1;
 
         //TODO message type
-		message = j_message_new(J_MESSAGE_OBJECT_READ, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, namespace_len + name_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
@@ -1707,7 +1707,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		name_len = strlen(object->name) + 1;
 
         //TODO message type
-		message = j_message_new(J_MESSAGE_OBJECT_WRITE, namespace_len + name_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, namespace_len + name_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
@@ -2007,7 +2007,7 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 	if (object_backend == NULL)
 	{
         //TODO message type
-		message = j_message_new(J_MESSAGE_OBJECT_STATUS, namespace_len);
+		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_STATUS, namespace_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
 	}
