@@ -221,6 +221,10 @@ j_transformation_object_write_free (gpointer data)
 
 	JTransformationObjectOperation* operation = data;
 
+    j_transformation_cleanup(operation->write.object->transformation, 
+            operation->write.data, operation->write.length, operation->write.offset,
+            J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+
 	j_transformation_object_unref(operation->write.object);
 
 	g_slice_free(JTransformationObjectOperation, operation);
@@ -1174,6 +1178,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	JListIterator* it;
 	g_autoptr(JMessage) message = NULL;
 	JTransformationObject* object;
+    JTransformation* transformation;
 	gpointer object_handle;
 
 	// FIXME
@@ -1189,6 +1194,15 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
+
+        transformation = object->transformation;
+
+        if(transformation == NULL)
+        {
+            j_transformation_object_load_transformation(object, semantics);
+            transformation = object->transformation;
+            g_assert(transformation != NULL);
+        }
 	}
 
 	it = j_list_iterator_new(operations);
@@ -1220,96 +1234,118 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	}
 	*/
 
-	while (j_list_iterator_next(it))
-	{
-		JTransformationObjectOperation* operation = j_list_iterator_get(it);
-		gpointer data = operation->read.data;
-		guint64 length = operation->read.length;
-		guint64 offset = operation->read.offset;
-		guint64* bytes_read = operation->read.bytes_read;
+    // Find out if the whole object has to be read to perform the retransformation of the read data 
+    if(j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ))
+    {
+        //TODO
+    }
+    // In place modification of the object data are possible and the only thing that needs to
+    // be done is transforming the data of the read
+    else
+    {
+        while (j_list_iterator_next(it))
+        {
+            JTransformationObjectOperation* operation = j_list_iterator_get(it);
+            gpointer data = operation->read.data;
+            guint64 length = operation->read.length;
+            guint64 offset = operation->read.offset;
+            guint64* bytes_read = operation->read.bytes_read;
 
-		j_trace_file_begin(object->name, J_TRACE_FILE_READ);
+            j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
-		if (object_backend != NULL)
-		{
-			guint64 nbytes = 0;
+            if (object_backend != NULL)
+            {
+                guint64 nbytes = 0;
 
-			ret = j_backend_object_read(object_backend, object_handle, data, length, offset, &nbytes) && ret;
-			j_helper_atomic_add(bytes_read, nbytes);
-		}
-		else
-		{
-			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
-			j_message_append_8(message, &length);
-			j_message_append_8(message, &offset);
-		}
+                ret = j_backend_object_read(object_backend, object_handle, data, length, offset, &nbytes) && ret;
+                j_helper_atomic_add(bytes_read, nbytes);
 
-		j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
-	}
+                j_transformation_apply(transformation, data, length, offset, &data, &length, &offset,
+                        J_TRANSFORMATION_CALLER_CLIENT_READ);
+                // TODO check for memory leak. should be fine, because the modified read buffer is freed
+                // in the _apply function
+            }
+            else
+            {
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+                j_message_append_8(message, &length);
+                j_message_append_8(message, &offset);
+            }
 
-	j_list_iterator_free(it);
+            j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
+        }
 
-	if (object_backend != NULL)
-	{
-		ret = j_backend_object_close(object_backend, object_handle) && ret;
-	}
-	else
-	{
-		g_autoptr(JMessage) reply = NULL;
-		gpointer object_connection;
-		guint32 operations_done;
-		guint32 operation_count;
+        j_list_iterator_free(it);
 
-		object_connection = j_connection_pool_pop(J_BACKEND_TYPE_OBJECT, object->index);
-		j_message_send(message, object_connection);
+        if (object_backend != NULL)
+        {
+            ret = j_backend_object_close(object_backend, object_handle) && ret;
+        }
+        else
+        {
+            g_autoptr(JMessage) reply = NULL;
+            gpointer object_connection;
+            guint32 operations_done;
+            guint32 operation_count;
 
-		reply = j_message_new_reply(message);
+            object_connection = j_connection_pool_pop(J_BACKEND_TYPE_OBJECT, object->index);
+            j_message_send(message, object_connection);
 
-		operations_done = 0;
-		operation_count = j_message_get_count(message);
+            reply = j_message_new_reply(message);
 
-		it = j_list_iterator_new(operations);
+            operations_done = 0;
+            operation_count = j_message_get_count(message);
 
-		/**
-		 * This extra loop is necessary because the server might send multiple
-		 * replies per message. The same reply object can be used to receive
-		 * multiple times.
-		 */
-		while (operations_done < operation_count)
-		{
-			guint32 reply_operation_count;
+            it = j_list_iterator_new(operations);
 
-			j_message_receive(reply, object_connection);
+            /**
+             * This extra loop is necessary because the server might send multiple
+             * replies per message. The same reply object can be used to receive
+             * multiple times.
+             */
+            while (operations_done < operation_count)
+            {
+                guint32 reply_operation_count;
 
-			reply_operation_count = j_message_get_count(reply);
+                j_message_receive(reply, object_connection);
 
-			for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
-			{
-				JTransformationObjectOperation* operation = j_list_iterator_get(it);
-				gpointer data = operation->read.data;
-				guint64* bytes_read = operation->read.bytes_read;
+                reply_operation_count = j_message_get_count(reply);
 
-				guint64 nbytes;
+                for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
+                {
+                    JTransformationObjectOperation* operation = j_list_iterator_get(it);
+                    gpointer data = operation->read.data;
+                    guint64 length = operation->read.length;
+                    guint64 offset = operation->read.offset;
+                    guint64* bytes_read = operation->read.bytes_read;
 
-				nbytes = j_message_get_8(reply);
-				j_helper_atomic_add(bytes_read, nbytes);
+                    guint64 nbytes;
 
-				if (nbytes > 0)
-				{
-					GInputStream* input;
+                    nbytes = j_message_get_8(reply);
+                    j_helper_atomic_add(bytes_read, nbytes);
 
-					input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
-					g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
-				}
-			}
+                    if (nbytes > 0)
+                    {
+                        GInputStream* input;
 
-			operations_done += reply_operation_count;
-		}
+                        input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
+                        g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
 
-		j_list_iterator_free(it);
+                        j_transformation_apply(transformation, data, length, offset, &data, &length, &offset,
+                                J_TRANSFORMATION_CALLER_CLIENT_READ);
+                        // TODO check for memory leak. should be fine, because the modified read buffer is freed
+                        // in the _apply function
+                    }
+                }
 
-		j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
-	}
+                operations_done += reply_operation_count;
+            }
+
+            j_list_iterator_free(it);
+
+            j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
+        }
+    }
 
 	/*
 	if (lock != NULL)
