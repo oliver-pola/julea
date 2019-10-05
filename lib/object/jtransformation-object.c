@@ -691,11 +691,32 @@ j_transformation_object_load_object_size(JTransformationObject* object, JSemanti
 /*         ret = true; */
 /*     } */
 /*     return ret; */
+    bool ret = false;
+
+    g_autoptr(JKVIterator) kv_iter = NULL;
+    kv_iter = j_kv_iterator_new(object->namespace, object->name);
+    while(j_kv_iterator_next(kv_iter))
+    {
+        gchar const* key;
+        gconstpointer value;
+        guint32 len;
+
+        key = j_kv_iterator_get(kv_iter, &value, &len);
+
+        if(g_strcmp0(key, object->name) == 0)
+        {
+            JTransformationObjectMetadata* mdata = (JTransformationObjectMetadata*)value;
+            object->original_size = mdata->original_size;
+            object->transformed_size = mdata->transformed_size;
+            ret = true;
+        }
+    }
+    return ret;
 }
 
 static
 void
-j_transformation_object_update_object_size(JTransformationObject* object, JSemantics* semantics)
+j_transformation_object_update_stored_metadata(JTransformationObject* object, JSemantics* semantics)
 {
     /* JBatch* kv_batch = j_batch_new(semantics); */
     /*  */
@@ -707,6 +728,19 @@ j_transformation_object_update_object_size(JTransformationObject* object, JSeman
     /*  */
     /* j_kv_put(object->metadata, metadata_bson, kv_batch); */
     /* j_batch_execute(kv_batch); */
+
+    // TODO mdata freigeben?
+    g_autoptr(JBatch) kv_batch = NULL;
+
+    kv_batch = j_batch_new(semantics);
+    gpointer mdata = malloc(sizeof(JTransformationObjectMetadata));
+    ((JTransformationObjectMetadata*)mdata)->transformation_type = object->transformation->type;
+    ((JTransformationObjectMetadata*)mdata)->transformation_mode = object->transformation->mode;
+    ((JTransformationObjectMetadata*)mdata)->original_size = object->original_size;
+    ((JTransformationObjectMetadata*)mdata)->transformed_size = object->transformed_size;
+
+    j_kv_put(object->metadata, mdata, sizeof(JTransformationObjectMetadata), g_free, kv_batch);
+    j_batch_execute(kv_batch);
 }
 
 static
@@ -977,9 +1011,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
     /*  */
 	/* 	namespace_len = strlen(object->namespace) + 1; */
 	/* 	name_len = strlen(object->name) + 1; */
-    /*  */
-	/* 	message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, 2 + namespace_len + name_len); */
-	/* 	j_message_set_safety(message, semantics); */
+    /*  */ /* 	message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, 2 + namespace_len + name_len); */ /* 	j_message_set_safety(message, semantics); */
 	/* 	j_message_append_1(message, &transformation_mode); */
 	/* 	j_message_append_1(message, &transformation_type); */
 	/* 	j_message_append_n(message, object->namespace, namespace_len); */
@@ -1674,6 +1706,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	JListIterator* it;
 	g_autoptr(JMessage) message = NULL;
 	JTransformationObject* object;
+    JTransformation* transformation;
 	gpointer object_handle;
 
 	// FIXME
@@ -1686,9 +1719,17 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		JTransformationObjectOperation* operation = j_list_get_first(operations);
 
 		object = operation->write.object;
+        transformation = object->transformation;
 
 		g_assert(operation != NULL);
 		g_assert(object != NULL);
+		
+        if(transformation == NULL)
+        {
+            j_transformation_object_load_transformation(object, semantics);
+            transformation = object->transformation;
+            g_assert(transformation != NULL);
+        }
 	}
 
 	it = j_list_iterator_new(operations);
@@ -1720,87 +1761,114 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	}
 	*/
 
-	while (j_list_iterator_next(it))
-	{
-		JTransformationObjectOperation* operation = j_list_iterator_get(it);
-		gconstpointer data = operation->write.data;
-		guint64 length = operation->write.length;
-		guint64 offset = operation->write.offset;
-		guint64* bytes_written = operation->write.bytes_written;
+    // Find out if the whole object has to be read to perform the write to the transformed data
+    if(j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+    {
+        //TODO
+    }
+    // In place modification of the object data are possible and the only thing that needs to
+    // be done is transforming the data of the write 
+    else
+    {
+        while (j_list_iterator_next(it))
+        {
+            JTransformationObjectOperation* operation = j_list_iterator_get(it);
+            gconstpointer data = operation->write.data;
+            guint64 length = operation->write.length;
+            guint64 offset = operation->write.offset;
+            guint64* bytes_written = operation->write.bytes_written;
 
-		j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
+            j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
 
-		/*
-		if (lock != NULL)
-		{
-			j_lock_add(lock, block_id);
-		}
-		*/
+            /*
+            if (lock != NULL)
+            {
+                j_lock_add(lock, block_id);
+            }
+            */
 
-		if (object_backend != NULL)
-		{
-			guint64 nbytes = 0;
+            // Modify the data buffer by applying the transformation
+            j_transformation_apply(transformation, data, length, offset, &data, &length, &offset, 
+                    J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+            // Store a pointer to the newly created buffer from jtransformation_apply in the operation
+            // so that it can be freed in _write_free
+            operation->write.data = data;
 
-			ret = j_backend_object_write(object_backend, object_handle, data, length, offset, &nbytes) && ret;
-			j_helper_atomic_add(bytes_written, nbytes);
-		}
-		else
-		{
-			j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
-			j_message_append_8(message, &length);
-			j_message_append_8(message, &offset);
-			j_message_add_send(message, data, length);
 
-			// Fake bytes_written here instead of doing another loop further down
-			if (j_semantics_get(semantics, J_SEMANTICS_SAFETY) == J_SEMANTICS_SAFETY_NONE)
-			{
-				j_helper_atomic_add(bytes_written, length);
-			}
-		}
+            if (object_backend != NULL)
+            {
+                guint64 nbytes = 0;
 
-		j_trace_file_end(object->name, J_TRACE_FILE_WRITE, length, offset);
-	}
+                ret = j_backend_object_write(object_backend, object_handle, data, length, offset, &nbytes) && ret;
+                j_helper_atomic_add(bytes_written, nbytes);
+            }
+            else
+            {
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+                j_message_append_8(message, &length);
+                j_message_append_8(message, &offset);
+                j_message_add_send(message, data, length);
 
-	j_list_iterator_free(it);
+                // Fake bytes_written here instead of doing another loop further down
+                if (j_semantics_get(semantics, J_SEMANTICS_SAFETY) == J_SEMANTICS_SAFETY_NONE)
+                {
+                    j_helper_atomic_add(bytes_written, length);
+                }
+            }
 
-	if (object_backend != NULL)
-	{
-		ret = j_backend_object_close(object_backend, object_handle) && ret;
-	}
-	else
-	{
-		JSemanticsSafety safety;
+            // If neccessary update original_size and transformed_size
+            j_transformation_object_load_object_size(object, semantics);
+            if( offset + length > object->original_size)
+            {
+                object->original_size = offset + length;
+                object->transformed_size = offset + length;
+                j_transformation_object_update_stored_metadata(object, semantics);
+            }
 
-		gpointer object_connection;
+            j_trace_file_end(object->name, J_TRACE_FILE_WRITE, length, offset);
+        }
 
-		safety = j_semantics_get(semantics, J_SEMANTICS_SAFETY);
-		object_connection = j_connection_pool_pop(J_BACKEND_TYPE_OBJECT, object->index);
-		j_message_send(message, object_connection);
+        j_list_iterator_free(it);
 
-		if (safety == J_SEMANTICS_SAFETY_NETWORK || safety == J_SEMANTICS_SAFETY_STORAGE)
-		{
-			g_autoptr(JMessage) reply = NULL;
-			guint64 nbytes;
+        if (object_backend != NULL)
+        {
+            ret = j_backend_object_close(object_backend, object_handle) && ret;
+        }
+        else
+        {
+            JSemanticsSafety safety;
 
-			reply = j_message_new_reply(message);
-			j_message_receive(reply, object_connection);
+            gpointer object_connection;
 
-			it = j_list_iterator_new(operations);
+            safety = j_semantics_get(semantics, J_SEMANTICS_SAFETY);
+            object_connection = j_connection_pool_pop(J_BACKEND_TYPE_OBJECT, object->index);
+            j_message_send(message, object_connection);
 
-			while (j_list_iterator_next(it))
-			{
-				JTransformationObjectOperation* operation = j_list_iterator_get(it);
-				guint64* bytes_written = operation->write.bytes_written;
+            if (safety == J_SEMANTICS_SAFETY_NETWORK || safety == J_SEMANTICS_SAFETY_STORAGE)
+            {
+                g_autoptr(JMessage) reply = NULL;
+                guint64 nbytes;
 
-				nbytes = j_message_get_8(reply);
-				j_helper_atomic_add(bytes_written, nbytes);
-			}
+                reply = j_message_new_reply(message);
+                j_message_receive(reply, object_connection);
 
-			j_list_iterator_free(it);
-		}
+                it = j_list_iterator_new(operations);
 
-		j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
-	}
+                while (j_list_iterator_next(it))
+                {
+                    JTransformationObjectOperation* operation = j_list_iterator_get(it);
+                    guint64* bytes_written = operation->write.bytes_written;
+
+                    nbytes = j_message_get_8(reply);
+                    j_helper_atomic_add(bytes_written, nbytes);
+                }
+
+                j_list_iterator_free(it);
+            }
+
+            j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
+        }
+    }
 
 	/*
 	if (lock != NULL)
