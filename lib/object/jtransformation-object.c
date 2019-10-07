@@ -418,7 +418,14 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 		namespace = object->namespace;
 		namespace_len = strlen(namespace) + 1;
 		index = object->index;
+
+        // Delete the metadata entry in the kv-store
+        g_autoptr(JBatch) kv_batch = NULL;
+        kv_batch = j_batch_new(semantics);
+        j_kv_delete(object->metadata, kv_batch);
+        j_batch_execute(kv_batch);
 	}
+
 
 	it = j_list_iterator_new(operations);
 	object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
@@ -1420,6 +1427,10 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
 	object->namespace = g_strdup(namespace);
 	object->name = g_strdup(name);
 	object->ref_count = 1;
+
+    object->metadata = j_kv_new(namespace, name);
+    object->original_size = 0;
+    object->transformed_size = 0;
 
 	return object;
 }
