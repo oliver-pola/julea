@@ -28,5 +28,6 @@
 #include <object/jobject-iterator.h>
 #include <object/jobject-uri.h>
 #include <object/jtransformation-object.h>
+#include <object/jchunked-transformation-object.h>
 
 #endif

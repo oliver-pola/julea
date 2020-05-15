@@ -419,11 +419,11 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 		namespace_len = strlen(namespace) + 1;
 		index = object->index;
 
-        // Delete the metadata entry in the kv-store
-        g_autoptr(JBatch) kv_batch = NULL;
-        kv_batch = j_batch_new(semantics);
-        j_kv_delete(object->metadata, kv_batch);
-        j_batch_execute(kv_batch);
+        /* // Delete the metadata entry in the kv-store */
+        /* g_autoptr(JBatch) kv_batch = NULL; */
+        /* kv_batch = j_batch_new(semantics); */
+        /* j_kv_delete(object->metadata, kv_batch); */
+        /* j_batch_execute(kv_batch); */
 	}
 
 
@@ -441,6 +441,12 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 	while (j_list_iterator_next(it))
 	{
 		JTransformationObject* object = j_list_iterator_get(it);
+
+        // Delete the metadata entry in the kv-store
+        g_autoptr(JBatch) kv_batch = NULL;
+        kv_batch = j_batch_new(semantics);
+        j_kv_delete(object->metadata, kv_batch);
+        j_batch_execute(kv_batch);
 
 		if (object_backend != NULL)
 		{
