@@ -26,7 +26,9 @@
 
 #include <glib.h>
 
+#ifdef HAVE_LZ4
 #include <lz4.h>
+#endif
 
 /**
  * \defgroup JTransformation Transformation
@@ -175,6 +177,7 @@ static void j_transformation_apply_rle_inverse (gpointer input, gpointer* output
 static void j_transformation_apply_lz4 (gpointer input, gpointer* output,
     guint64* length)
 {
+#ifdef HAVE_LZ4
     char* out;
     guint64 max_out_len;
     gint64 lz4_compression_result;
@@ -193,11 +196,13 @@ static void j_transformation_apply_lz4 (gpointer input, gpointer* output,
     memcpy(*output, out, lz4_compression_result);
 
     g_slice_free1(max_out_len, out);
+#endif
 }
 
 static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output,
     guint64* length)
 {
+#ifdef HAVE_LZ4
     char* out;
     guint64 max_out_len;
     gint64 lz4_decompression_result;
@@ -216,6 +221,7 @@ static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output
     memcpy(*output, out, *length);
 
     g_slice_free1(max_out_len, out);
+#endif
 }
 
 static gboolean j_transformation_here(JTransformation* trafo,
@@ -224,6 +230,15 @@ static gboolean j_transformation_here(JTransformation* trafo,
     // Early exit if nothing to do
     if (trafo->type == J_TRANSFORMATION_TYPE_NONE)
         return FALSE;
+
+#ifndef HAVE_LZ4
+    // User wants lz4 but it was not found in dependencies
+    if (trafo->type == J_TRANSFORMATION_TYPE_LZ4)
+    {
+        g_warning("Request to J_TRANSFORMATION_TYPE_LZ4 but JULEA built without lz4, no transformation applied");
+        return FALSE;
+    }
+#endif
 
     // Decide who needs to do transform in given mode
     switch (trafo->mode)

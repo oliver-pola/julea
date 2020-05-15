@@ -200,8 +200,9 @@ def configure(ctx):
 		ctx,
 		package='liblz4',
 		args=['--cflags', '--libs'],
-                uselib_store = 'LZ4',
-                pkg_config_path = get_pkg_config_path(ctx.options.lz4)
+		uselib_store = 'LZ4',
+		pkg_config_path = get_pkg_config_path(ctx.options.lz4),
+		mandatory=False
 	)
 
 	check_cfg_rpath(
