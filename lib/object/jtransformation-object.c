@@ -129,7 +129,8 @@ struct JTransformationObject
 };
 
 /**
- * TODO
+ * Metadata fields needed for object management. 
+ * The metadata for each object will be in the kv-store
  **/
 struct JTransformationObjectMetadata
 {
