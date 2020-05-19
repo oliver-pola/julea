@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2017-2019 Michael Kuhn
+ * Copyright (C) 2017-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -15,8 +15,6 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#define _POSIX_C_SOURCE 200809L
 
 #include <julea-config.h>
 
@@ -35,16 +33,21 @@ struct JMongoDBBatch
 
 typedef struct JMongoDBBatch JMongoDBBatch;
 
-static mongoc_client_t* backend_connection = NULL;
+struct JMongoDBData
+{
+	mongoc_client_t* connection;
 
-static gchar* backend_host = NULL;
-static gchar* backend_database = NULL;
+	gchar* host;
+	gchar* database;
+};
 
-static
-gboolean
-backend_batch_start (gchar const* namespace, JSemantics* semantics, gpointer* data)
+typedef struct JMongoDBData JMongoDBData;
+
+static gboolean
+backend_batch_start(gpointer backend_data, gchar const* namespace, JSemantics* semantics, gpointer* backend_batch)
 {
 	JMongoDBBatch* batch;
+	JMongoDBData* bd = backend_data;
 	bson_t command[1];
 	bson_t index[1];
 	bson_t indexes[1];
@@ -59,7 +62,7 @@ backend_batch_start (gchar const* namespace, JSemantics* semantics, gpointer* da
 	gchar* index_name;
 
 	g_return_val_if_fail(namespace != NULL, FALSE);
-	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(backend_batch != NULL, FALSE);
 
 	bson_init(key);
 	bson_append_int32(key, "key", -1, 1);
@@ -96,8 +99,8 @@ backend_batch_start (gchar const* namespace, JSemantics* semantics, gpointer* da
 	}
 
 	/* FIXME cache */
-	m_collection = mongoc_client_get_collection(backend_connection, backend_database, namespace);
-	m_database = mongoc_client_get_database(backend_connection, backend_database);
+	m_collection = mongoc_client_get_collection(bd->connection, bd->database, namespace);
+	m_database = mongoc_client_get_database(bd->connection, bd->database);
 
 	mongoc_database_write_command_with_opts(m_database, command, NULL, reply, NULL);
 
@@ -119,22 +122,23 @@ backend_batch_start (gchar const* namespace, JSemantics* semantics, gpointer* da
 	batch->bulk_op = bulk_op;
 	batch->namespace = g_strdup(namespace);
 
-	*data = batch;
+	*backend_batch = batch;
 
 	return TRUE;
 }
 
-static
-gboolean
-backend_batch_execute (gpointer data)
+static gboolean
+backend_batch_execute(gpointer backend_data, gpointer backend_batch)
 {
 	gboolean ret = FALSE;
 
-	JMongoDBBatch* batch = data;
+	JMongoDBBatch* batch = backend_batch;
 
 	bson_t reply[1];
 
-	g_return_val_if_fail(data != NULL, FALSE);
+	(void)backend_data;
+
+	g_return_val_if_fail(backend_batch != NULL, FALSE);
 
 	ret = mongoc_bulk_operation_execute(batch->bulk_op, reply, NULL);
 
@@ -157,15 +161,16 @@ backend_batch_execute (gpointer data)
 	return ret;
 }
 
-static
-gboolean
-backend_put (gpointer data, gchar const* key, gconstpointer value, guint32 len)
+static gboolean
+backend_put(gpointer backend_data, gpointer backend_batch, gchar const* key, gconstpointer value, guint32 len)
 {
-	JMongoDBBatch* batch = data;
+	JMongoDBBatch* batch = backend_batch;
 	bson_t document[1];
 	bson_t selector[1];
 
-	g_return_val_if_fail(data != NULL, FALSE);
+	(void)backend_data;
+
+	g_return_val_if_fail(backend_batch != NULL, FALSE);
 	g_return_val_if_fail(key != NULL, FALSE);
 	g_return_val_if_fail(value != NULL, FALSE);
 
@@ -197,14 +202,15 @@ backend_put (gpointer data, gchar const* key, gconstpointer value, guint32 len)
 	return TRUE;
 }
 
-static
-gboolean
-backend_delete (gpointer data, gchar const* key)
+static gboolean
+backend_delete(gpointer backend_data, gpointer backend_batch, gchar const* key)
 {
-	JMongoDBBatch* batch = data;
+	JMongoDBBatch* batch = backend_batch;
 	bson_t document[1];
 
-	g_return_val_if_fail(data != NULL, FALSE);
+	(void)backend_data;
+
+	g_return_val_if_fail(backend_batch != NULL, FALSE);
 	g_return_val_if_fail(key != NULL, FALSE);
 
 	bson_init(document);
@@ -217,13 +223,13 @@ backend_delete (gpointer data, gchar const* key)
 	return TRUE;
 }
 
-static
-gboolean
-backend_get (gpointer data, gchar const* key, gpointer* value, guint32* len)
+static gboolean
+backend_get(gpointer backend_data, gpointer backend_batch, gchar const* key, gpointer* value, guint32* len)
 {
 	gboolean ret = FALSE;
 
-	JMongoDBBatch* batch = data;
+	JMongoDBBatch* batch = backend_batch;
+	JMongoDBData* bd = backend_data;
 
 	bson_t document[1];
 	bson_t opts[1];
@@ -231,7 +237,7 @@ backend_get (gpointer data, gchar const* key, gpointer* value, guint32* len)
 	mongoc_collection_t* m_collection;
 	mongoc_cursor_t* cursor;
 
-	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(backend_batch != NULL, FALSE);
 	g_return_val_if_fail(key != NULL, FALSE);
 	g_return_val_if_fail(value != NULL, FALSE);
 	g_return_val_if_fail(len != NULL, FALSE);
@@ -242,7 +248,7 @@ backend_get (gpointer data, gchar const* key, gpointer* value, guint32* len)
 	bson_init(opts);
 	bson_append_int32(opts, "limit", -1, 1);
 
-	m_collection = mongoc_client_get_collection(backend_connection, backend_database, batch->namespace);
+	m_collection = mongoc_client_get_collection(bd->connection, bd->database, batch->namespace);
 	cursor = mongoc_collection_find_with_opts(m_collection, document, opts, NULL);
 
 	while (mongoc_cursor_next(cursor, &result))
@@ -272,10 +278,10 @@ backend_get (gpointer data, gchar const* key, gpointer* value, guint32* len)
 	return ret;
 }
 
-static
-gboolean
-backend_get_all (gchar const* namespace, gpointer* data)
+static gboolean
+backend_get_all(gpointer backend_data, gchar const* namespace, gpointer* backend_iterator)
 {
+	JMongoDBData* bd = backend_data;
 	gboolean ret = FALSE;
 
 	bson_t document[1];
@@ -283,17 +289,17 @@ backend_get_all (gchar const* namespace, gpointer* data)
 	mongoc_cursor_t* cursor;
 
 	g_return_val_if_fail(namespace != NULL, FALSE);
-	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(backend_iterator != NULL, FALSE);
 
 	bson_init(document);
 
-	m_collection = mongoc_client_get_collection(backend_connection, backend_database, namespace);
+	m_collection = mongoc_client_get_collection(bd->connection, bd->database, namespace);
 	cursor = mongoc_collection_find_with_opts(m_collection, document, NULL, NULL);
 
 	if (cursor != NULL)
 	{
 		ret = TRUE;
-		*data = cursor;
+		*backend_iterator = cursor;
 	}
 
 	mongoc_collection_destroy(m_collection);
@@ -303,10 +309,10 @@ backend_get_all (gchar const* namespace, gpointer* data)
 	return ret;
 }
 
-static
-gboolean
-backend_get_by_prefix (gchar const* namespace, gchar const* prefix, gpointer* data)
+static gboolean
+backend_get_by_prefix(gpointer backend_data, gchar const* namespace, gchar const* prefix, gpointer* backend_iterator)
 {
+	JMongoDBData* bd = backend_data;
 	gboolean ret = FALSE;
 
 	bson_t document[1];
@@ -317,7 +323,7 @@ backend_get_by_prefix (gchar const* namespace, gchar const* prefix, gpointer* da
 
 	g_return_val_if_fail(namespace != NULL, FALSE);
 	g_return_val_if_fail(prefix != NULL, FALSE);
-	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(backend_iterator != NULL, FALSE);
 
 	escaped_prefix = g_regex_escape_string(prefix, -1);
 	regex_prefix = g_strdup_printf("^%s", escaped_prefix);
@@ -325,13 +331,13 @@ backend_get_by_prefix (gchar const* namespace, gchar const* prefix, gpointer* da
 	bson_init(document);
 	bson_append_regex(document, "key", -1, regex_prefix, NULL);
 
-	m_collection = mongoc_client_get_collection(backend_connection, backend_database, namespace);
+	m_collection = mongoc_client_get_collection(bd->connection, bd->database, namespace);
 	cursor = mongoc_collection_find_with_opts(m_collection, document, NULL, NULL);
 
 	if (cursor != NULL)
 	{
 		ret = TRUE;
-		*data = cursor;
+		*backend_iterator = cursor;
 	}
 
 	mongoc_collection_destroy(m_collection);
@@ -341,17 +347,18 @@ backend_get_by_prefix (gchar const* namespace, gchar const* prefix, gpointer* da
 	return ret;
 }
 
-static
-gboolean
-backend_iterate (gpointer data, gchar const** key, gconstpointer* value, guint32* len)
+static gboolean
+backend_iterate(gpointer backend_data, gpointer backend_iterator, gchar const** key, gconstpointer* value, guint32* len)
 {
 	bson_t const* result;
 	bson_iter_t iter;
-	mongoc_cursor_t* cursor = data;
+	mongoc_cursor_t* cursor = backend_iterator;
 
 	gboolean ret = FALSE;
 
-	g_return_val_if_fail(data != NULL, FALSE);
+	(void)backend_data;
+
+	g_return_val_if_fail(backend_iterator != NULL, FALSE);
 	g_return_val_if_fail(value != NULL, FALSE);
 	g_return_val_if_fail(len != NULL, FALSE);
 
@@ -390,10 +397,10 @@ backend_iterate (gpointer data, gchar const** key, gconstpointer* value, guint32
 	return ret;
 }
 
-static
-gboolean
-backend_init (gchar const* path)
+static gboolean
+backend_init(gchar const* path, gpointer* backend_data)
 {
+	JMongoDBData* bd;
 	mongoc_uri_t* uri;
 
 	gboolean ret = FALSE;
@@ -406,43 +413,48 @@ backend_init (gchar const* path)
 
 	split = g_strsplit(path, ":", 0);
 
-	backend_host = g_strdup(split[0]);
-	backend_database = g_strdup(split[1]);
+	bd = g_slice_new(JMongoDBData);
+	bd->host = g_strdup(split[0]);
+	bd->database = g_strdup(split[1]);
 
-	g_return_val_if_fail(backend_host != NULL, FALSE);
-	g_return_val_if_fail(backend_database != NULL, FALSE);
+	g_return_val_if_fail(bd->host != NULL, FALSE);
+	g_return_val_if_fail(bd->database != NULL, FALSE);
 
-	uri = mongoc_uri_new_for_host_port(backend_host, 27017);
-	backend_connection = mongoc_client_new_from_uri(uri);
+	uri = mongoc_uri_new_for_host_port(bd->host, 27017);
+	bd->connection = mongoc_client_new_from_uri(uri);
 	mongoc_uri_destroy(uri);
 
-	if (backend_connection != NULL)
+	if (bd->connection != NULL)
 	{
-		ret = mongoc_client_get_server_status(backend_connection, NULL, NULL, NULL);
+		ret = mongoc_client_get_server_status(bd->connection, NULL, NULL, NULL);
 	}
 
 	if (!ret)
 	{
-		g_critical("Can not connect to MongoDB %s.", backend_host);
+		g_critical("Can not connect to MongoDB %s.", bd->host);
 	}
+
+	*backend_data = bd;
 
 	return TRUE;
 }
 
-static
-void
-backend_fini (void)
+static void
+backend_fini(gpointer backend_data)
 {
-	mongoc_client_destroy(backend_connection);
+	JMongoDBData* bd = backend_data;
 
-	g_free(backend_database);
-	g_free(backend_host);
+	mongoc_client_destroy(bd->connection);
+
+	g_free(bd->database);
+	g_free(bd->host);
+
+	g_slice_free(JMongoDBData, bd);
 
 	mongoc_cleanup();
 }
 
-static
-JBackend mongodb_backend = {
+static JBackend mongodb_backend = {
 	.type = J_BACKEND_TYPE_KV,
 	.component = J_BACKEND_COMPONENT_CLIENT,
 	.kv = {
@@ -455,13 +467,12 @@ JBackend mongodb_backend = {
 		.backend_get = backend_get,
 		.backend_get_all = backend_get_all,
 		.backend_get_by_prefix = backend_get_by_prefix,
-		.backend_iterate = backend_iterate
-	}
+		.backend_iterate = backend_iterate }
 };
 
 G_MODULE_EXPORT
 JBackend*
-backend_info (void)
+backend_info(void)
 {
 	return &mongodb_backend;
 }

@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,13 +27,13 @@
 #include <jmessage.h>
 #include <jstatistics.h>
 
-G_GNUC_INTERNAL JStatistics* jd_statistics;
-G_GNUC_INTERNAL GMutex jd_statistics_mutex[1];
+G_GNUC_INTERNAL extern JStatistics* jd_statistics;
+G_GNUC_INTERNAL extern GMutex jd_statistics_mutex[1];
 
-G_GNUC_INTERNAL JBackend* jd_object_backend;
-G_GNUC_INTERNAL JBackend* jd_kv_backend;
-G_GNUC_INTERNAL JBackend* jd_db_backend;
+G_GNUC_INTERNAL extern JBackend* jd_object_backend;
+G_GNUC_INTERNAL extern JBackend* jd_kv_backend;
+G_GNUC_INTERNAL extern JBackend* jd_db_backend;
 
-G_GNUC_INTERNAL gboolean jd_handle_message (JMessage*, GSocketConnection*, JMemoryChunk*, guint64, JStatistics*);
+G_GNUC_INTERNAL gboolean jd_handle_message(JMessage*, GSocketConnection*, JMemoryChunk*, guint64, JStatistics*);
 
 #endif

@@ -34,7 +34,7 @@
 #include "../../backend/db/jbson.c"
 
 JDBIterator*
-j_db_iterator_new (JDBSchema* schema, JDBSelector* selector, GError** error)
+j_db_iterator_new(JDBSchema* schema, JDBSelector* selector, GError** error)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -47,7 +47,7 @@ j_db_iterator_new (JDBSchema* schema, JDBSelector* selector, GError** error)
 	g_return_val_if_fail((selector == NULL) || (selector->schema == schema), NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
-	iterator = g_slice_new(JDBIterator);
+	iterator = j_helper_alloc_aligned(128, sizeof(JDBIterator));
 	iterator->schema = j_db_schema_ref(schema);
 
 	if (G_UNLIKELY(!iterator->schema))
@@ -74,7 +74,7 @@ j_db_iterator_new (JDBSchema* schema, JDBSelector* selector, GError** error)
 	iterator->valid = FALSE;
 	iterator->bson_valid = FALSE;
 	batch = j_batch_new_for_template(J_SEMANTICS_TEMPLATE_DEFAULT);
-	ret2 = j_db_internal_query(schema->namespace, schema->name, j_db_selector_get_bson(selector), &iterator->iterator, batch, error);
+	ret2 = j_db_internal_query(schema, selector, iterator, batch, error);
 	ret = ret2 && j_batch_execute(batch);
 	j_batch_unref(batch);
 
@@ -90,7 +90,7 @@ j_db_iterator_new (JDBSchema* schema, JDBSelector* selector, GError** error)
 _error:
 	if (ret2)
 	{
-		while (j_db_internal_iterate(iterator->iterator, NULL, NULL))
+		while (j_db_internal_iterate(iterator, NULL))
 		{
 			/*do nothing*/
 		}
@@ -102,7 +102,7 @@ _error:
 }
 
 JDBIterator*
-j_db_iterator_ref (JDBIterator* iterator)
+j_db_iterator_ref(JDBIterator* iterator)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -114,7 +114,7 @@ j_db_iterator_ref (JDBIterator* iterator)
 }
 
 void
-j_db_iterator_unref (JDBIterator* iterator)
+j_db_iterator_unref(JDBIterator* iterator)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -139,12 +139,12 @@ j_db_iterator_unref (JDBIterator* iterator)
 			j_bson_destroy(&iterator->bson);
 		}
 
-		g_slice_free(JDBIterator, iterator);
+		g_free(iterator);
 	}
 }
 
 gboolean
-j_db_iterator_next (JDBIterator* iterator, GError** error)
+j_db_iterator_next(JDBIterator* iterator, GError** error)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -157,7 +157,7 @@ j_db_iterator_next (JDBIterator* iterator, GError** error)
 		j_bson_destroy(&iterator->bson);
 	}
 
-	if (G_UNLIKELY(!j_db_internal_iterate(iterator->iterator, &iterator->bson, error)))
+	if (G_UNLIKELY(!j_db_internal_iterate(iterator, error)))
 	{
 		goto _error;
 	}
@@ -174,7 +174,7 @@ _error:
 }
 
 gboolean
-j_db_iterator_get_field (JDBIterator* iterator, gchar const* name, JDBType* type, gpointer* value, guint64* length, GError** error)
+j_db_iterator_get_field(JDBIterator* iterator, gchar const* name, JDBType* type, gpointer* value, guint64* length, GError** error)
 {
 	J_TRACE_FUNCTION(NULL);
 

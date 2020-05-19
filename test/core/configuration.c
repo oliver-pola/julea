@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,22 +26,20 @@
 
 #include "test.h"
 
-static
-void
-test_configuration_new_ref_unref (void)
+static void
+test_configuration_new_ref_unref(void)
 {
 	JConfiguration* configuration;
 
 	configuration = j_configuration_new();
-	g_assert(configuration != NULL);
+	g_assert_true(configuration != NULL);
 	j_configuration_ref(configuration);
 	j_configuration_unref(configuration);
 	j_configuration_unref(configuration);
 }
 
-static
-void
-test_configuration_new_for_data (void)
+static void
+test_configuration_new_for_data(void)
 {
 	JConfiguration* configuration;
 	GKeyFile* key_file;
@@ -62,15 +60,14 @@ test_configuration_new_for_data (void)
 	g_key_file_set_string(key_file, "db", "path", "");
 
 	configuration = j_configuration_new_for_data(key_file);
-	g_assert(configuration != NULL);
+	g_assert_true(configuration != NULL);
 	j_configuration_unref(configuration);
 
 	g_key_file_free(key_file);
 }
 
-static
-void
-test_configuration_get (void)
+static void
+test_configuration_get(void)
 {
 	JConfiguration* configuration;
 	GKeyFile* key_file;
@@ -93,7 +90,7 @@ test_configuration_get (void)
 	g_key_file_set_string(key_file, "db", "path", "NULL3");
 
 	configuration = j_configuration_new_for_data(key_file);
-	g_assert(configuration != NULL);
+	g_assert_true(configuration != NULL);
 
 	g_assert_cmpstr(j_configuration_get_server(configuration, J_BACKEND_TYPE_OBJECT, 0), ==, "localhost");
 	g_assert_cmpstr(j_configuration_get_server(configuration, J_BACKEND_TYPE_OBJECT, 1), ==, "local.host");
@@ -124,9 +121,9 @@ test_configuration_get (void)
 }
 
 void
-test_configuration (void)
+test_core_configuration(void)
 {
-	g_test_add_func("/configuration/new_ref_unref", test_configuration_new_ref_unref);
-	g_test_add_func("/configuration/new_for_data", test_configuration_new_for_data);
-	g_test_add_func("/configuration/get", test_configuration_get);
+	g_test_add_func("/core/configuration/new_ref_unref", test_configuration_new_ref_unref);
+	g_test_add_func("/core/configuration/new_for_data", test_configuration_new_for_data);
+	g_test_add_func("/core/configuration/get", test_configuration_get);
 }

@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,21 +26,19 @@
 
 #include "test.h"
 
-static
-void
-test_memory_chunk_new_free (void)
+static void
+test_memory_chunk_new_free(void)
 {
 	JMemoryChunk* memory_chunk;
 
 	memory_chunk = j_memory_chunk_new(42);
-	g_assert(memory_chunk != NULL);
+	g_assert_true(memory_chunk != NULL);
 
 	j_memory_chunk_free(memory_chunk);
 }
 
-static
-void
-test_memory_chunk_get (void)
+static void
+test_memory_chunk_get(void)
 {
 	JMemoryChunk* memory_chunk;
 	gpointer ret;
@@ -48,20 +46,19 @@ test_memory_chunk_get (void)
 	memory_chunk = j_memory_chunk_new(3);
 
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret == NULL);
+	g_assert_true(ret == NULL);
 
 	j_memory_chunk_free(memory_chunk);
 }
 
-static
-void
-test_memory_chunk_reset (void)
+static void
+test_memory_chunk_reset(void)
 {
 	JMemoryChunk* memory_chunk;
 	gpointer ret;
@@ -69,24 +66,24 @@ test_memory_chunk_reset (void)
 	memory_chunk = j_memory_chunk_new(1);
 
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret == NULL);
+	g_assert_true(ret == NULL);
 
 	j_memory_chunk_reset(memory_chunk);
 
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_memory_chunk_get(memory_chunk, 1);
-	g_assert(ret == NULL);
+	g_assert_true(ret == NULL);
 
 	j_memory_chunk_free(memory_chunk);
 }
 
 void
-test_memory_chunk (void)
+test_core_memory_chunk(void)
 {
-	g_test_add_func("/memory-chunk/new_free", test_memory_chunk_new_free);
-	g_test_add_func("/memory-chunk/get", test_memory_chunk_get);
-	g_test_add_func("/memory-chunk/reset", test_memory_chunk_reset);
+	g_test_add_func("/core/memory-chunk/new_free", test_memory_chunk_new_free);
+	g_test_add_func("/core/memory-chunk/get", test_memory_chunk_get);
+	g_test_add_func("/core/memory-chunk/reset", test_memory_chunk_reset);
 }

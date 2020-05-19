@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # JULEA - Flexible storage framework
-# Copyright (C) 2017-2019 Michael Kuhn
+# Copyright (C) 2017-2020 Michael Kuhn
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -41,6 +41,7 @@ run_test ()
 
 	setup_init
 	setup_start
+	# FIXME gtester is deprecated, replace with tappy?
 	gtester --keep-going --verbose "$@" "$(which julea-test)" || ret=$?
 	setup_stop
 

@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,43 +23,46 @@
 
 #include <julea.h>
 
-static
-gboolean
-backend_create (gchar const* namespace, gchar const* path, gpointer* data)
+static gboolean
+backend_create(gpointer backend_data, gchar const* namespace, gchar const* path, gpointer* backend_object)
 {
 	gchar* full_path;
+
+	(void)backend_data;
 
 	full_path = g_build_filename(namespace, path, NULL);
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_CREATE);
 	j_trace_file_end(full_path, J_TRACE_FILE_CREATE, 0, 0);
 
-	*data = full_path;
+	*backend_object = full_path;
 
 	return TRUE;
 }
 
-static
-gboolean
-backend_open (gchar const* namespace, gchar const* path, gpointer* data)
+static gboolean
+backend_open(gpointer backend_data, gchar const* namespace, gchar const* path, gpointer* backend_object)
 {
 	gchar* full_path;
+
+	(void)backend_data;
 
 	full_path = g_build_filename(namespace, path, NULL);
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_OPEN);
 	j_trace_file_end(full_path, J_TRACE_FILE_OPEN, 0, 0);
 
-	*data = full_path;
+	*backend_object = full_path;
 
 	return TRUE;
 }
 
-static
-gboolean
-backend_delete (gpointer data)
+static gboolean
+backend_delete(gpointer backend_data, gpointer backend_object)
 {
-	gchar* full_path = data;
+	gchar* full_path = backend_object;
+
+	(void)backend_data;
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_DELETE);
 	j_trace_file_end(full_path, J_TRACE_FILE_DELETE, 0, 0);
@@ -69,11 +72,12 @@ backend_delete (gpointer data)
 	return TRUE;
 }
 
-static
-gboolean
-backend_close (gpointer data)
+static gboolean
+backend_close(gpointer backend_data, gpointer backend_object)
 {
-	gchar* full_path = data;
+	gchar* full_path = backend_object;
+
+	(void)backend_data;
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_CLOSE);
 	j_trace_file_end(full_path, J_TRACE_FILE_CLOSE, 0, 0);
@@ -83,11 +87,12 @@ backend_close (gpointer data)
 	return TRUE;
 }
 
-static
-gboolean
-backend_status (gpointer data, gint64* modification_time, guint64* size)
+static gboolean
+backend_status(gpointer backend_data, gpointer backend_object, gint64* modification_time, guint64* size)
 {
-	gchar const* full_path = data;
+	gchar const* full_path = backend_object;
+
+	(void)backend_data;
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_STATUS);
 	j_trace_file_end(full_path, J_TRACE_FILE_STATUS, 0, 0);
@@ -105,11 +110,12 @@ backend_status (gpointer data, gint64* modification_time, guint64* size)
 	return TRUE;
 }
 
-static
-gboolean
-backend_sync (gpointer data)
+static gboolean
+backend_sync(gpointer backend_data, gpointer backend_object)
 {
-	gchar const* full_path = data;
+	gchar const* full_path = backend_object;
+
+	(void)backend_data;
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_SYNC);
 	j_trace_file_end(full_path, J_TRACE_FILE_SYNC, 0, 0);
@@ -117,12 +123,12 @@ backend_sync (gpointer data)
 	return TRUE;
 }
 
-static
-gboolean
-backend_read (gpointer data, gpointer buffer, guint64 length, guint64 offset, guint64* bytes_read)
+static gboolean
+backend_read(gpointer backend_data, gpointer backend_object, gpointer buffer, guint64 length, guint64 offset, guint64* bytes_read)
 {
-	gchar const* full_path = data;
+	gchar const* full_path = backend_object;
 
+	(void)backend_data;
 	(void)buffer;
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_READ);
@@ -136,12 +142,12 @@ backend_read (gpointer data, gpointer buffer, guint64 length, guint64 offset, gu
 	return TRUE;
 }
 
-static
-gboolean
-backend_write (gpointer data, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written)
+static gboolean
+backend_write(gpointer backend_data, gpointer backend_object, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written)
 {
-	gchar const* full_path = data;
+	gchar const* full_path = backend_object;
 
+	(void)backend_data;
 	(void)buffer;
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_WRITE);
@@ -155,23 +161,22 @@ backend_write (gpointer data, gconstpointer buffer, guint64 length, guint64 offs
 	return TRUE;
 }
 
-static
-gboolean
-backend_init (gchar const* path)
+static gboolean
+backend_init(gchar const* path, gpointer* backend_data)
 {
+	(void)backend_data;
 	(void)path;
 
 	return TRUE;
 }
 
-static
-void
-backend_fini (void)
+static void
+backend_fini(gpointer backend_data)
 {
+	(void)backend_data;
 }
 
-static
-JBackend null_backend = {
+static JBackend null_backend = {
 	.type = J_BACKEND_TYPE_OBJECT,
 	.component = J_BACKEND_COMPONENT_CLIENT | J_BACKEND_COMPONENT_SERVER,
 	.object = {
@@ -184,13 +189,12 @@ JBackend null_backend = {
 		.backend_status = backend_status,
 		.backend_sync = backend_sync,
 		.backend_read = backend_read,
-		.backend_write = backend_write
-	}
+		.backend_write = backend_write }
 };
 
 G_MODULE_EXPORT
 JBackend*
-backend_info (void)
+backend_info(void)
 {
 	return &null_backend;
 }

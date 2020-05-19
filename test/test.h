@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -19,28 +19,32 @@
 #ifndef JULEA_TEST_T
 #define JULEA_TEST_T
 
-void test_background_operation (void);
-void test_batch (void);
-void test_cache (void);
-void test_configuration (void);
-void test_distribution (void);
-void test_list (void);
-void test_list_iterator (void);
-void test_memory_chunk (void);
-void test_message (void);
-void test_semantics (void);
+void test_core_background_operation(void);
+void test_core_batch(void);
+void test_core_cache(void);
+void test_core_configuration(void);
+void test_core_credentials(void);
+void test_core_distribution(void);
+void test_core_list(void);
+void test_core_list_iterator(void);
+void test_core_memory_chunk(void);
+void test_core_message(void);
+void test_core_semantics(void);
 
-void test_object_distributed_object (void);
-void test_object_object (void);
+void test_object_distributed_object(void);
+void test_object_object(void);
 
-void test_kv_iterator (void);
+void test_kv_kv(void);
+void test_kv_kv_iterator(void);
 
-void test_collection (void);
-void test_collection_iterator (void);
-void test_item (void);
-void test_item_iterator (void);
-void test_uri (void);
+void test_db_db(void);
 
-void test_hdf (void);
+void test_item_collection(void);
+void test_item_collection_iterator(void);
+void test_item_item(void);
+void test_item_item_iterator(void);
+void test_item_uri(void);
+
+void test_hdf_hdf(void);
 
 #endif

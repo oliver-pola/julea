@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,7 @@
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -46,7 +47,7 @@
  **/
 
 void
-j_helper_set_nodelay (GSocketConnection* connection, gboolean enable)
+j_helper_set_nodelay(GSocketConnection* connection, gboolean enable)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -64,7 +65,7 @@ j_helper_set_nodelay (GSocketConnection* connection, gboolean enable)
 }
 
 void
-j_helper_set_cork (GSocketConnection* connection, gboolean enable)
+j_helper_set_cork(GSocketConnection* connection, gboolean enable)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -82,7 +83,7 @@ j_helper_set_cork (GSocketConnection* connection, gboolean enable)
 }
 
 void
-j_helper_get_number_string (gchar* string, guint32 length, guint32 number)
+j_helper_get_number_string(gchar* string, guint32 length, guint32 number)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -94,7 +95,7 @@ j_helper_get_number_string (gchar* string, guint32 length, guint32 number)
 }
 
 gchar*
-j_helper_str_replace (gchar const* str, gchar const* old, gchar const* new)
+j_helper_str_replace(gchar const* str, gchar const* old, gchar const* new)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -114,7 +115,7 @@ j_helper_str_replace (gchar const* str, gchar const* old, gchar const* new)
 }
 
 gboolean
-j_helper_execute_parallel (JBackgroundOperationFunc func, gpointer* data, guint length)
+j_helper_execute_parallel(JBackgroundOperationFunc func, gpointer* data, guint length)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -165,7 +166,7 @@ j_helper_execute_parallel (JBackgroundOperationFunc func, gpointer* data, guint 
 }
 
 guint64
-j_helper_atomic_add (guint64 volatile* ptr, guint64 val)
+j_helper_atomic_add(guint64 volatile* ptr, guint64 val)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -187,7 +188,7 @@ j_helper_atomic_add (guint64 volatile* ptr, guint64 val)
 }
 
 guint32
-j_helper_hash (gchar const* str)
+j_helper_hash(gchar const* str)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -202,6 +203,21 @@ j_helper_hash (gchar const* str)
 	}
 
 	return hash;
+}
+
+gpointer
+j_helper_alloc_aligned(gsize align, gsize len)
+{
+	gpointer buf;
+
+	buf = aligned_alloc(align, len);
+
+	if (buf == NULL)
+	{
+		g_error("Failed to allocate %" G_GSIZE_FORMAT " bytes with %" G_GSIZE_FORMAT " byte alignment", len, align);
+	}
+
+	return buf;
 }
 
 /**

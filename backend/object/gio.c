@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,27 +25,32 @@
 
 #include <julea.h>
 
-struct JBackendFile
+struct JBackendData
+{
+	gchar* path;
+};
+
+typedef struct JBackendData JBackendData;
+
+struct JBackendObject
 {
 	gchar* path;
 	GFileIOStream* stream;
 };
 
-typedef struct JBackendFile JBackendFile;
+typedef struct JBackendObject JBackendObject;
 
-static gchar* jd_backend_path = NULL;
-
-static
-gboolean
-backend_create (gchar const* namespace, gchar const* path, gpointer* data)
+static gboolean
+backend_create(gpointer backend_data, gchar const* namespace, gchar const* path, gpointer* backend_object)
 {
-	JBackendFile* bf;
+	JBackendData* bd = backend_data;
+	JBackendObject* bo;
 	GFile* file;
 	GFile* parent;
 	GFileIOStream* stream;
 	gchar* full_path;
 
-	full_path = g_build_filename(jd_backend_path, namespace, path, NULL);
+	full_path = g_build_filename(bd->path, namespace, path, NULL);
 	file = g_file_new_for_path(full_path);
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_CREATE);
@@ -58,112 +63,126 @@ backend_create (gchar const* namespace, gchar const* path, gpointer* data)
 
 	j_trace_file_end(full_path, J_TRACE_FILE_CREATE, 0, 0);
 
-	bf = g_slice_new(JBackendFile);
-	bf->path = full_path;
-	bf->stream = stream;
+	bo = g_slice_new(JBackendObject);
+	bo->path = full_path;
+	bo->stream = stream;
 
-	*data = bf;
+	*backend_object = bo;
 
 	g_object_unref(file);
 
 	return (stream != NULL);
 }
 
-static
-gboolean
-backend_open (gchar const* namespace, gchar const* path, gpointer* data)
+static gboolean
+backend_open(gpointer backend_data, gchar const* namespace, gchar const* path, gpointer* backend_object)
 {
-	JBackendFile* bf;
+	JBackendData* bd = backend_data;
+	JBackendObject* bo;
 	GFile* file;
 	GFileIOStream* stream;
 	gchar* full_path;
 
-	full_path = g_build_filename(jd_backend_path, namespace, path, NULL);
+	full_path = g_build_filename(bd->path, namespace, path, NULL);
 	file = g_file_new_for_path(full_path);
 
 	j_trace_file_begin(full_path, J_TRACE_FILE_OPEN);
 	stream = g_file_open_readwrite(file, NULL, NULL);
 	j_trace_file_end(full_path, J_TRACE_FILE_OPEN, 0, 0);
 
-	bf = g_slice_new(JBackendFile);
-	bf->path = full_path;
-	bf->stream = stream;
+	bo = g_slice_new(JBackendObject);
+	bo->path = full_path;
+	bo->stream = stream;
 
-	*data = bf;
+	*backend_object = bo;
 
 	g_object_unref(file);
 
 	return (stream != NULL);
 }
 
-static
-gboolean
-backend_delete (gpointer data)
+static gboolean
+backend_delete(gpointer backend_data, gpointer backend_object)
 {
-	JBackendFile* bf = data;
+	JBackendObject* bo = backend_object;
 	gboolean ret;
-
 	GFile* file;
 
-	file = g_file_new_for_path(bf->path);
+	(void)backend_data;
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_DELETE);
+	file = g_file_new_for_path(bo->path);
+
+	j_trace_file_begin(bo->path, J_TRACE_FILE_DELETE);
 	ret = g_file_delete(file, NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_DELETE, 0, 0);
+	j_trace_file_end(bo->path, J_TRACE_FILE_DELETE, 0, 0);
 
 	g_object_unref(file);
 
-	g_object_unref(bf->stream);
-	g_free(bf->path);
-	g_slice_free(JBackendFile, bf);
+	g_object_unref(bo->stream);
+	g_free(bo->path);
+	g_slice_free(JBackendObject, bo);
 
 	return ret;
 }
 
-static
-gboolean
-backend_close (gpointer data)
+static gboolean
+backend_close(gpointer backend_data, gpointer backend_object)
 {
-	JBackendFile* bf = data;
+	JBackendObject* bo = backend_object;
 	gboolean ret;
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_CLOSE);
-	ret = g_io_stream_close(G_IO_STREAM(bf->stream), NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_CLOSE, 0, 0);
+	(void)backend_data;
 
-	g_object_unref(bf->stream);
-	g_free(bf->path);
-	g_slice_free(JBackendFile, bf);
+	j_trace_file_begin(bo->path, J_TRACE_FILE_CLOSE);
+	ret = g_io_stream_close(G_IO_STREAM(bo->stream), NULL, NULL);
+	j_trace_file_end(bo->path, J_TRACE_FILE_CLOSE, 0, 0);
+
+	g_object_unref(bo->stream);
+	g_free(bo->path);
+	g_slice_free(JBackendObject, bo);
 
 	return ret;
 }
 
-static
-gboolean
-backend_status (gpointer data, gint64* modification_time, guint64* size)
+static gboolean
+backend_status(gpointer backend_data, gpointer backend_object, gint64* modification_time, guint64* size)
 {
-	JBackendFile* bf = data;
+	JBackendObject* bo = backend_object;
 	gboolean ret = TRUE;
+
+	(void)backend_data;
 
 	if (modification_time != NULL || size != NULL)
 	{
 		GFile* file;
 		GFileInfo* file_info;
 
-		file = g_file_new_for_path(bf->path);
+		file = g_file_new_for_path(bo->path);
 
-		j_trace_file_begin(bf->path, J_TRACE_FILE_STATUS);
+		j_trace_file_begin(bo->path, J_TRACE_FILE_STATUS);
 		file_info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_TIME_MODIFIED "," G_FILE_ATTRIBUTE_TIME_MODIFIED_USEC, G_FILE_QUERY_INFO_NONE, NULL, NULL);
-		j_trace_file_end(bf->path, J_TRACE_FILE_STATUS, 0, 0);
+		j_trace_file_end(bo->path, J_TRACE_FILE_STATUS, 0, 0);
 
 		ret = (file_info != NULL);
 
 		if (modification_time != NULL)
 		{
+#if GLIB_CHECK_VERSION(2, 62, 0)
+			GDateTime* date_time;
+
+			date_time = g_file_info_get_modification_date_time(file_info);
+
+			if (date_time != NULL)
+			{
+				*modification_time = g_date_time_to_unix(date_time) * G_USEC_PER_SEC + g_date_time_get_microsecond(date_time);
+				g_date_time_unref(date_time);
+			}
+#else
 			GTimeVal time_val;
 
 			g_file_info_get_modification_time(file_info, &time_val);
 			*modification_time = time_val.tv_sec * G_USEC_PER_SEC + time_val.tv_usec;
+#endif
 		}
 
 		if (size != NULL)
@@ -178,43 +197,44 @@ backend_status (gpointer data, gint64* modification_time, guint64* size)
 	return ret;
 }
 
-static
-gboolean
-backend_sync (gpointer data)
+static gboolean
+backend_sync(gpointer backend_data, gpointer backend_object)
 {
-	JBackendFile* bf = data;
+	JBackendObject* bo = backend_object;
 	gboolean ret;
-
 	GOutputStream* output;
 
-	output = g_io_stream_get_output_stream(G_IO_STREAM(bf->stream));
+	(void)backend_data;
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_SYNC);
+	output = g_io_stream_get_output_stream(G_IO_STREAM(bo->stream));
+
+	j_trace_file_begin(bo->path, J_TRACE_FILE_SYNC);
 	ret = g_output_stream_flush(output, NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_SYNC, 0, 0);
+	j_trace_file_end(bo->path, J_TRACE_FILE_SYNC, 0, 0);
 
 	return ret;
 }
 
-static
-gboolean
-backend_read (gpointer data, gpointer buffer, guint64 length, guint64 offset, guint64* bytes_read)
+static gboolean
+backend_read(gpointer backend_data, gpointer backend_object, gpointer buffer, guint64 length, guint64 offset, guint64* bytes_read)
 {
-	JBackendFile* bf = data;
+	JBackendObject* bo = backend_object;
 	gboolean ret;
 
 	GInputStream* input;
 	gsize nbytes;
 
-	input = g_io_stream_get_input_stream(G_IO_STREAM(bf->stream));
+	(void)backend_data;
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_SEEK);
-	g_seekable_seek(G_SEEKABLE(bf->stream), offset, G_SEEK_SET, NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_SEEK, 0, offset);
+	input = g_io_stream_get_input_stream(G_IO_STREAM(bo->stream));
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_READ);
+	j_trace_file_begin(bo->path, J_TRACE_FILE_SEEK);
+	g_seekable_seek(G_SEEKABLE(bo->stream), offset, G_SEEK_SET, NULL, NULL);
+	j_trace_file_end(bo->path, J_TRACE_FILE_SEEK, 0, offset);
+
+	j_trace_file_begin(bo->path, J_TRACE_FILE_READ);
 	ret = g_input_stream_read_all(input, buffer, length, &nbytes, NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_READ, nbytes, offset);
+	j_trace_file_end(bo->path, J_TRACE_FILE_READ, nbytes, offset);
 
 	if (bytes_read != NULL)
 	{
@@ -224,25 +244,26 @@ backend_read (gpointer data, gpointer buffer, guint64 length, guint64 offset, gu
 	return ret;
 }
 
-static
-gboolean
-backend_write (gpointer data, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written)
+static gboolean
+backend_write(gpointer backend_data, gpointer backend_object, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written)
 {
-	JBackendFile* bf = data;
+	JBackendObject* bo = backend_object;
 	gboolean ret;
 
 	GOutputStream* output;
 	gsize nbytes;
 
-	output = g_io_stream_get_output_stream(G_IO_STREAM(bf->stream));
+	(void)backend_data;
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_SEEK);
-	g_seekable_seek(G_SEEKABLE(bf->stream), offset, G_SEEK_SET, NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_SEEK, 0, offset);
+	output = g_io_stream_get_output_stream(G_IO_STREAM(bo->stream));
 
-	j_trace_file_begin(bf->path, J_TRACE_FILE_WRITE);
+	j_trace_file_begin(bo->path, J_TRACE_FILE_SEEK);
+	g_seekable_seek(G_SEEKABLE(bo->stream), offset, G_SEEK_SET, NULL, NULL);
+	j_trace_file_end(bo->path, J_TRACE_FILE_SEEK, 0, offset);
+
+	j_trace_file_begin(bo->path, J_TRACE_FILE_WRITE);
 	ret = g_output_stream_write_all(output, buffer, length, &nbytes, NULL, NULL);
-	j_trace_file_end(bf->path, J_TRACE_FILE_WRITE, nbytes, offset);
+	j_trace_file_end(bo->path, J_TRACE_FILE_WRITE, nbytes, offset);
 
 	if (bytes_written != NULL)
 	{
@@ -252,30 +273,34 @@ backend_write (gpointer data, gconstpointer buffer, guint64 length, guint64 offs
 	return ret;
 }
 
-static
-gboolean
-backend_init (gchar const* path)
+static gboolean
+backend_init(gchar const* path, gpointer* backend_data)
 {
+	JBackendData* bd;
 	GFile* file;
 
-	jd_backend_path = g_strdup(path);
+	bd = g_slice_new(JBackendData);
+	bd->path = g_strdup(path);
 
 	file = g_file_new_for_path(path);
 	g_file_make_directory_with_parents(file, NULL, NULL);
 	g_object_unref(file);
 
+	*backend_data = bd;
+
 	return TRUE;
 }
 
-static
-void
-backend_fini (void)
+static void
+backend_fini(gpointer backend_data)
 {
-	g_free(jd_backend_path);
+	JBackendData* bd = backend_data;
+
+	g_free(bd->path);
+	g_slice_free(JBackendData, bd);
 }
 
-static
-JBackend gio_backend = {
+static JBackend gio_backend = {
 	.type = J_BACKEND_TYPE_OBJECT,
 	.component = J_BACKEND_COMPONENT_SERVER,
 	.object = {
@@ -288,13 +313,12 @@ JBackend gio_backend = {
 		.backend_status = backend_status,
 		.backend_sync = backend_sync,
 		.backend_read = backend_read,
-		.backend_write = backend_write
-	}
+		.backend_write = backend_write }
 };
 
 G_MODULE_EXPORT
 JBackend*
-backend_info (void)
+backend_info(void)
 {
 	return &gio_backend;
 }

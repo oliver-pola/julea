@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -26,21 +26,19 @@
 
 #include "test.h"
 
-static
-void
-test_cache_new_free (void)
+static void
+test_cache_new_free(void)
 {
 	JCache* cache;
 
 	cache = j_cache_new(42);
-	g_assert(cache != NULL);
+	g_assert_true(cache != NULL);
 
 	j_cache_free(cache);
 }
 
-static
-void
-test_cache_get (void)
+static void
+test_cache_get(void)
 {
 	JCache* cache;
 	gpointer ret;
@@ -48,20 +46,19 @@ test_cache_get (void)
 	cache = j_cache_new(3);
 
 	ret = j_cache_get(cache, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_cache_get(cache, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_cache_get(cache, 1);
-	g_assert(ret != NULL);
+	g_assert_true(ret != NULL);
 	ret = j_cache_get(cache, 1);
-	g_assert(ret == NULL);
+	g_assert_true(ret == NULL);
 
 	j_cache_free(cache);
 }
 
-static
-void
-test_cache_release (void)
+static void
+test_cache_release(void)
 {
 	JCache* cache;
 	gpointer ret1;
@@ -70,24 +67,24 @@ test_cache_release (void)
 	cache = j_cache_new(1);
 
 	ret1 = j_cache_get(cache, 1);
-	g_assert(ret1 != NULL);
+	g_assert_true(ret1 != NULL);
 	ret2 = j_cache_get(cache, 1);
-	g_assert(ret2 == NULL);
+	g_assert_true(ret2 == NULL);
 
 	j_cache_release(cache, ret1);
 
 	ret1 = j_cache_get(cache, 1);
-	g_assert(ret1 != NULL);
+	g_assert_true(ret1 != NULL);
 	ret2 = j_cache_get(cache, 1);
-	g_assert(ret2 == NULL);
+	g_assert_true(ret2 == NULL);
 
 	j_cache_free(cache);
 }
 
 void
-test_cache (void)
+test_core_cache(void)
 {
-	g_test_add_func("/cache/new_free", test_cache_new_free);
-	g_test_add_func("/cache/get", test_cache_get);
-	g_test_add_func("/cache/release", test_cache_release);
+	g_test_add_func("/core/cache/new_free", test_cache_new_free);
+	g_test_add_func("/core/cache/get", test_cache_get);
+	g_test_add_func("/core/cache/release", test_cache_release);
 }

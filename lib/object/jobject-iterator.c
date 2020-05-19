@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2017-2019 Michael Kuhn
+ * Copyright (C) 2017-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,6 +25,8 @@
 #include <glib.h>
 
 #include <object/jobject-iterator.h>
+
+#include <object/jobject-internal.h>
 
 #include <julea.h>
 
@@ -52,7 +54,7 @@ struct JObjectIterator
  * \return A new JObjectIterator.
  **/
 JObjectIterator*
-j_object_iterator_new (gchar const* namespace)
+j_object_iterator_new(gchar const* namespace)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -66,7 +68,7 @@ j_object_iterator_new (gchar const* namespace)
 
 	iterator = g_slice_new(JObjectIterator);
 	iterator->namespace = g_strdup(namespace);
-	iterator->object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
+	iterator->object_backend = j_object_get_backend();
 	iterator->servers = j_configuration_get_server_count(configuration, J_BACKEND_TYPE_OBJECT);
 	iterator->message = NULL;
 
@@ -86,7 +88,7 @@ j_object_iterator_new (gchar const* namespace)
  * \param iterator A JObjectIterator.
  **/
 void
-j_object_iterator_free (JObjectIterator* iterator)
+j_object_iterator_free(JObjectIterator* iterator)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -113,7 +115,7 @@ j_object_iterator_free (JObjectIterator* iterator)
  * \return TRUE on success, FALSE if the end of the collection is reached.
  **/
 gboolean
-j_object_iterator_next (JObjectIterator* iterator)
+j_object_iterator_next(JObjectIterator* iterator)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -142,7 +144,7 @@ j_object_iterator_next (JObjectIterator* iterator)
  * \return A new item. Should be freed with j_object_unref().
  **/
 gchar const*
-j_object_iterator_get (JObjectIterator* iterator, guint64* index)
+j_object_iterator_get(JObjectIterator* iterator, guint64* index)
 {
 	J_TRACE_FUNCTION(NULL);
 

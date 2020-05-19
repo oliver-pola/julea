@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2019 Michael Kuhn
+ * Copyright (C) 2019-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -25,9 +25,8 @@
 
 #include "test.h"
 
-static
-void
-test_object_new_free (void)
+static void
+test_object_new_free(void)
 {
 	guint const n = 100000;
 
@@ -36,13 +35,12 @@ test_object_new_free (void)
 		g_autoptr(JObject) object = NULL;
 
 		object = j_object_new("test", "test-object");
-		g_assert(object != NULL);
+		g_assert_true(object != NULL);
 	}
 }
 
-static
-void
-test_object_create_delete (void)
+static void
+test_object_create_delete(void)
 {
 	guint const n = 100;
 
@@ -58,7 +56,7 @@ test_object_create_delete (void)
 
 		name = g_strdup_printf("test-object-%u", i);
 		object = j_object_new("test", name);
-		g_assert(object != NULL);
+		g_assert_true(object != NULL);
 
 		j_object_create(object, batch);
 		j_object_delete(object, batch);
@@ -68,9 +66,8 @@ test_object_create_delete (void)
 	g_assert_true(ret);
 }
 
-static
-void
-test_object_read_write (void)
+static void
+test_object_read_write(void)
 {
 	g_autoptr(JBatch) batch = NULL;
 	g_autoptr(JObject) object = NULL;
@@ -85,7 +82,7 @@ test_object_read_write (void)
 	buffer = g_malloc0(max_operation_size + 1);
 
 	object = j_object_new("test", "test-object-rw");
-	g_assert(object != NULL);
+	g_assert_true(object != NULL);
 
 	j_object_create(object, batch);
 	ret = j_batch_execute(batch);
@@ -145,9 +142,8 @@ test_object_read_write (void)
 	g_assert_true(ret);
 }
 
-static
-void
-test_object_status (void)
+static void
+test_object_status(void)
 {
 	g_autoptr(JBatch) batch = NULL;
 	g_autoptr(JObject) object = NULL;
@@ -161,7 +157,7 @@ test_object_status (void)
 	buffer = g_malloc0(42);
 
 	object = j_object_new("test", "test-object-status");
-	g_assert(object != NULL);
+	g_assert_true(object != NULL);
 
 	j_object_create(object, batch);
 	ret = j_batch_execute(batch);
@@ -184,7 +180,7 @@ test_object_status (void)
 }
 
 void
-test_object_object (void)
+test_object_object(void)
 {
 	g_test_add_func("/object/object/new_free", test_object_new_free);
 	g_test_add_func("/object/object/create_delete", test_object_create_delete);

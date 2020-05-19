@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # JULEA - Flexible storage framework
-# Copyright (C) 2010-2019 Michael Kuhn
+# Copyright (C) 2010-2020 Michael Kuhn
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -30,6 +30,8 @@ out = 'build'
 # CentOS 7 has GLib 2.42, CentOS 7.6 has GLib 2.56
 # Ubuntu 18.04 has GLib 2.56
 glib_version = '2.56'
+# Ubuntu 18.04 has libfabric 1.5.3
+libfabric_version = '1.5.3'
 # Ubuntu 18.04 has libbson 1.9.2
 libbson_version = '1.9.0'
 
@@ -41,8 +43,8 @@ lmdb_version = '0.9.21'
 libmongoc_version = '1.9.0'
 # Ubuntu 18.04 has SQLite 3.22.0
 sqlite_version = '3.22.0'
-# Ubuntu 18.04 has MariaDB 10.1
-mariadb_version = '10.1'
+# Ubuntu 18.04 has MariaDB Connector/C 3.0.3
+mariadb_version = '3.0.3'
 
 
 def check_cfg_rpath(ctx, **kwargs):
@@ -151,10 +153,12 @@ def options(ctx):
 	#ctx.load('compiler_cxx')
 
 	ctx.add_option('--debug', action='store_true', default=False, help='Enable debug mode')
+	ctx.add_option('--error', action='store_true', default=False, help='Enable -Werror')
 	ctx.add_option('--sanitize', action='store_true', default=False, help='Enable sanitize mode')
 	ctx.add_option('--coverage', action='store_true', default=False, help='Enable coverage analysis')
 
 	ctx.add_option('--glib', action='store', default=None, help='GLib prefix')
+	ctx.add_option('--libfabric', action='store', default=None, help='libfabric prefix')
 	ctx.add_option('--leveldb', action='store', default=None, help='LevelDB prefix')
 	ctx.add_option('--lmdb', action='store', default=None, help='LMDB prefix')
 	ctx.add_option('--libbson', action='store', default=None, help='libbson prefix')
@@ -172,11 +176,13 @@ def configure(ctx):
 	ctx.load('gnu_dirs')
 	ctx.load('clang_compilation_database', tooldir='waf-extras')
 
-	ctx.env.JULEA_DEBUG = ctx.options.debug
-
 	check_and_add_flags(ctx, '-std=c11')
 	check_and_add_flags(ctx, '-fdiagnostics-color', False)
 	check_and_add_flags(ctx, ['-Wpedantic', '-Wall', '-Wextra'])
+
+	if ctx.options.error:
+		check_and_add_flags(ctx, '-Werror')
+
 	ctx.define('_POSIX_C_SOURCE', '200809L', quote=False)
 
 	ctx.check_large_file()
@@ -194,6 +200,15 @@ def configure(ctx):
 			uselib_store=module.upper(),
 			pkg_config_path=get_pkg_config_path(ctx.options.glib)
 		)
+
+	check_cfg_rpath(
+		ctx,
+		package='libfabric',
+		args=['--cflags', '--libs', 'libfabric >= {0}'.format(libfabric_version)],
+		uselib_store='LIBFABRIC',
+		pkg_config_path=get_pkg_config_path(ctx.options.libfabric),
+		mandatory=False
+	)
 
 	check_cfg_rpath(
 		ctx,
@@ -252,6 +267,7 @@ def configure(ctx):
 			mandatory=False
 		)
 
+	# Ubuntu's package does not ship a pkg-config file
 	if not ctx.env.JULEA_LEVELDB:
 		ctx.env.JULEA_LEVELDB = \
 			check_cc_rpath(
@@ -299,12 +315,25 @@ def configure(ctx):
 	ctx.env.JULEA_MARIADB = \
 		check_cfg_rpath(
 			ctx,
-			package='mariadb',
-			args=['--cflags', '--libs', 'mariadb >= {0}'.format(mariadb_version)],
+			package='libmariadb',
+			args=['--cflags', '--libs', 'libmariadb >= {0}'.format(mariadb_version)],
 			uselib_store='MARIADB',
 			pkg_config_path=get_pkg_config_path(ctx.options.mariadb),
 			mandatory=False
 		)
+
+	# Ubuntu's package does not ship a pkg-config file
+	if not ctx.env.JULEA_MARIADB:
+		ctx.env.JULEA_MARIADB = \
+			check_cfg_rpath(
+				ctx,
+				path='mariadb_config',
+				package='',
+				args=['--cflags', '--libs'],
+				uselib_store='MARIADB',
+				msg='Checking for mariadb_config',
+				mandatory=False
+			)
 
 	# stat.st_mtim.tv_nsec
 	ctx.check_cc(
@@ -351,19 +380,23 @@ def configure(ctx):
 
 	if ctx.options.sanitize:
 		check_and_add_flags(ctx, '-fsanitize=address', False, ['cflags', 'ldflags'])
-		# FIXME enable ubsan?
-		# check_and_add_flags(ctx, '-fsanitize=undefined', False, ['cflags', 'ldflags'])
+		check_and_add_flags(ctx, '-fsanitize=undefined', False, ['cflags', 'ldflags'])
 
 	if ctx.options.coverage:
 		check_and_add_flags(ctx, '--coverage', True, ['cflags', 'ldflags'])
 
 	if ctx.options.debug:
+		check_and_add_flags(ctx, ['-Og', '-g'])
+
 		check_and_add_flags(ctx, [
 			'-Waggregate-return',
-			'-Wcast-align',
+			'-Wcast-align=strict',
 			'-Wcast-qual',
+			#'-Wconversion',
 			'-Wdeclaration-after-statement',
+			'-Wdisabled-optimization',
 			'-Wdouble-promotion',
+			#'-Wduplicated-branches',
 			'-Wduplicated-cond',
 			'-Wfloat-equal',
 			'-Wformat=2',
@@ -379,9 +412,13 @@ def configure(ctx):
 			'-Wnested-externs',
 			'-Wnull-dereference',
 			'-Wold-style-definition',
+			'-Wpacked',
+			#'-Wpadded',
 			'-Wredundant-decls',
 			'-Wrestrict',
 			'-Wshadow',
+			#'-Wsign-conversion',
+			'-Wstack-protector',
 			'-Wstrict-prototypes',
 			'-Wswitch-default',
 			'-Wswitch-enum',
@@ -389,18 +426,17 @@ def configure(ctx):
 			'-Wuninitialized',
 			'-Wwrite-strings'
 		], False)
-		check_and_add_flags(ctx, '-ggdb')
 
 		ctx.define('G_DISABLE_DEPRECATED', 1)
 		ctx.define('GLIB_VERSION_MIN_REQUIRED', 'GLIB_VERSION_{0}'.format(glib_version.replace('.', '_')), quote=False)
 		ctx.define('GLIB_VERSION_MAX_ALLOWED', 'GLIB_VERSION_{0}'.format(glib_version.replace('.', '_')), quote=False)
+
+		ctx.define('JULEA_DEBUG', 1)
 	else:
 		check_and_add_flags(ctx, '-O2')
 
 	ctx.define('G_LOG_USE_STRUCTURED', 1)
-
-	if ctx.options.debug:
-		ctx.define('JULEA_DEBUG', 1)
+	ctx.define('G_LOG_DOMAIN', 'JULEA')
 
 	backend_path = Utils.subst_vars('${LIBDIR}/julea/backend', ctx.env)
 	ctx.define('JULEA_BACKEND_PATH', backend_path)
@@ -411,7 +447,14 @@ def configure(ctx):
 def build(ctx):
 	# Headers
 	include_dir = ctx.path.find_dir('include')
-	ctx.install_files('${INCLUDEDIR}/julea', include_dir.ant_glob('**/*.h', excl='**/*-internal.h'), cwd=include_dir, relative_trick=True)
+	include_excl = ['**/*-internal.h']
+
+	if not ctx.env.JULEA_HDF:
+		include_excl.append('**/julea-hdf5.h')
+		include_excl.append('**/jhdf5.h')
+		include_excl.append('**/jhdf5-*.h')
+
+	ctx.install_files('${INCLUDEDIR}/julea', include_dir.ant_glob('**/*.h', excl=include_excl), cwd=include_dir, relative_trick=True)
 
 	use_julea_core = ['M', 'GLIB']
 	use_julea_lib = use_julea_core + ['GIO', 'GOBJECT', 'LIBBSON', 'OTF']
@@ -464,7 +507,7 @@ def build(ctx):
 	ctx.program(
 		source=ctx.path.ant_glob('test/**/*.c'),
 		target='test/julea-test',
-		use=use_julea_object + use_julea_item + use_julea_hdf,
+		use=use_julea_object + use_julea_kv + use_julea_db + use_julea_item + use_julea_hdf,
 		includes=include_julea_core + ['test'],
 		rpath=get_rpath(ctx),
 		install_path=None
@@ -474,7 +517,7 @@ def build(ctx):
 	ctx.program(
 		source=ctx.path.ant_glob('benchmark/**/*.c'),
 		target='benchmark/julea-benchmark',
-		use=use_julea_item + use_julea_hdf,
+		use=use_julea_object + use_julea_kv + use_julea_item + use_julea_hdf,
 		includes=include_julea_core + ['benchmark'],
 		rpath=get_rpath(ctx),
 		install_path=None
@@ -505,11 +548,11 @@ def build(ctx):
 
 		ctx.shlib(
 			source=['backend/object/{0}.c'.format(backend)],
-			target='backend/object/{0}'.format(backend),
+			target='backend/object-{0}'.format(backend),
 			use=use_julea_backend + ['lib/julea'] + use_extra,
 			includes=include_julea_core,
 			rpath=get_rpath(ctx),
-			install_path='${LIBDIR}/julea/backend/object'
+			install_path='${LIBDIR}/julea/backend'
 		)
 
 	kv_backends = ['null']
@@ -538,7 +581,10 @@ def build(ctx):
 		elif backend == 'lmdb':
 			use_extra = ['LMDB']
 			# lmdb bug
-			cflags = ['-Wno-discarded-qualifiers']
+			if ctx.env.CC_NAME == 'clang':
+				cflags = ['-Wno-incompatible-pointer-types-discards-qualifiers']
+			else:
+				cflags = ['-Wno-discarded-qualifiers']
 		elif backend == 'mongodb':
 			use_extra = ['LIBMONGOC']
 		elif backend == 'sqlite':
@@ -546,21 +592,20 @@ def build(ctx):
 
 		ctx.shlib(
 			source=['backend/kv/{0}.c'.format(backend)],
-			target='backend/kv/{0}'.format(backend),
+			target='backend/kv-{0}'.format(backend),
 			use=use_julea_backend + ['lib/julea'] + use_extra,
 			includes=include_julea_core,
 			cflags=cflags,
 			rpath=get_rpath(ctx),
-			install_path='${LIBDIR}/julea/backend/kv'
+			install_path='${LIBDIR}/julea/backend'
 		)
 
-	db_backends = ['null']
+	db_backends = ['null', 'memory']
 
 	if ctx.env.JULEA_SQLITE:
 		db_backends.append('sqlite')
 	if ctx.env.JULEA_MARIADB:
 		db_backends.append('mysql')
-
 
 	for backend in db_backends:
 		use_extra = []
@@ -573,15 +618,20 @@ def build(ctx):
 			# MariaDB bug
 			# https://jira.mariadb.org/browse/CONC-381
 			cflags = ['-Wno-strict-prototypes']
+			# MySQL bug
+			if ctx.env.CC_NAME == 'clang':
+				cflags += ['-Wno-incompatible-pointer-types-discards-qualifiers']
+			else:
+				cflags += ['-Wno-discarded-qualifiers']
 
 		ctx.shlib(
 			source=['backend/db/{0}.c'.format(backend)],
-			target='backend/db/{0}'.format(backend),
+			target='backend/db-{0}'.format(backend),
 			use=use_julea_backend + ['lib/julea'] + use_extra,
 			includes=include_julea_core,
 			cflags=cflags,
 			rpath=get_rpath(ctx),
-			install_path='${LIBDIR}/julea/backend/db'
+			install_path='${LIBDIR}/julea/backend'
 		)
 
 	# Command line
@@ -639,12 +689,11 @@ def build(ctx):
 		)
 
 	# Example
-	#for compiler in ('c', 'cxx'):
-	#	ctx(
-	#		features=[compiler, '{0}program'.format(compiler)],
-	#		source=ctx.path.ant_glob('example/hello-world.c'),
-	#		target='example/hello-world-{0}'.format(compiler),
-	#		use=use_julea_object + use_julea_kv,
+	#for extension in ('c', 'cc'):
+	#	ctx.program(
+	#		source=ctx.path.ant_glob('example/hello-world.{0}'.format(extension)),
+	#		target='example/hello-world-{0}'.format(extension),
+	#		use=use_julea_object + use_julea_kv + use_julea_db,
 	#		includes=include_julea_core,
 	#		rpath=get_rpath(ctx),
 	#		install_path=None

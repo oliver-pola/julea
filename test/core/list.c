@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -24,27 +24,24 @@
 
 #include "test.h"
 
-static
-void
-test_list_fixture_setup (JList** list, gconstpointer data)
+static void
+test_list_fixture_setup(JList** list, gconstpointer data)
 {
 	(void)data;
 
 	*list = j_list_new(g_free);
 }
 
-static
-void
-test_list_fixture_teardown (JList** list, gconstpointer data)
+static void
+test_list_fixture_teardown(JList** list, gconstpointer data)
 {
 	(void)data;
 
 	j_list_unref(*list);
 }
 
-static
-void
-test_list_new_free (void)
+static void
+test_list_new_free(void)
 {
 	guint const n = 100000;
 
@@ -53,13 +50,12 @@ test_list_new_free (void)
 		g_autoptr(JList) list = NULL;
 
 		list = j_list_new(NULL);
-		g_assert(list != NULL);
+		g_assert_true(list != NULL);
 	}
 }
 
-static
-void
-test_list_length (JList** list, gconstpointer data)
+static void
+test_list_length(JList** list, gconstpointer data)
 {
 	guint const n = 100000;
 	guint l;
@@ -75,9 +71,8 @@ test_list_length (JList** list, gconstpointer data)
 	g_assert_cmpuint(l, ==, n);
 }
 
-static
-void
-test_list_append (JList** list, gconstpointer data)
+static void
+test_list_append(JList** list, gconstpointer data)
 {
 	guint const n = 100000;
 
@@ -89,9 +84,8 @@ test_list_append (JList** list, gconstpointer data)
 	}
 }
 
-static
-void
-test_list_prepend (JList** list, gconstpointer data)
+static void
+test_list_prepend(JList** list, gconstpointer data)
 {
 	guint const n = 100000;
 
@@ -103,9 +97,8 @@ test_list_prepend (JList** list, gconstpointer data)
 	}
 }
 
-static
-void
-test_list_get (JList** list, gconstpointer data)
+static void
+test_list_get(JList** list, gconstpointer data)
 {
 	gchar const* s;
 
@@ -123,11 +116,11 @@ test_list_get (JList** list, gconstpointer data)
 }
 
 void
-test_list (void)
+test_core_list(void)
 {
-	g_test_add_func("/list/new_free", test_list_new_free);
-	g_test_add("/list/length", JList*, NULL, test_list_fixture_setup, test_list_length, test_list_fixture_teardown);
-	g_test_add("/list/append", JList*, NULL, test_list_fixture_setup, test_list_append, test_list_fixture_teardown);
-	g_test_add("/list/prepend", JList*, NULL, test_list_fixture_setup, test_list_prepend, test_list_fixture_teardown);
-	g_test_add("/list/get", JList*, NULL, test_list_fixture_setup, test_list_get, test_list_fixture_teardown);
+	g_test_add_func("/core/list/new_free", test_list_new_free);
+	g_test_add("/core/list/length", JList*, NULL, test_list_fixture_setup, test_list_length, test_list_fixture_teardown);
+	g_test_add("/core/list/append", JList*, NULL, test_list_fixture_setup, test_list_append, test_list_fixture_teardown);
+	g_test_add("/core/list/prepend", JList*, NULL, test_list_fixture_setup, test_list_prepend, test_list_fixture_teardown);
+	g_test_add("/core/list/get", JList*, NULL, test_list_fixture_setup, test_list_get, test_list_fixture_teardown);
 }

@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2017-2019 Michael Kuhn
+ * Copyright (C) 2017-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include <object/jobject.h>
+#include <object/jobject-internal.h>
 
 #include <julea.h>
 
@@ -47,8 +48,7 @@ struct JObjectOperation
 			JObject* object;
 			gint64* modification_time;
 			guint64* size;
-		}
-		status;
+		} status;
 
 		struct
 		{
@@ -57,8 +57,7 @@ struct JObjectOperation
 			guint64 length;
 			guint64 offset;
 			guint64* bytes_read;
-		}
-		read;
+		} read;
 
 		struct
 		{
@@ -67,8 +66,7 @@ struct JObjectOperation
 			guint64 length;
 			guint64 offset;
 			guint64* bytes_written;
-		}
-		write;
+		} write;
 	};
 };
 
@@ -100,9 +98,67 @@ struct JObject
 	gint ref_count;
 };
 
-static
-void
-j_object_create_free (gpointer data)
+static JBackend* j_object_backend = NULL;
+static GModule* j_object_module = NULL;
+
+// FIXME copy and use GLib's G_DEFINE_CONSTRUCTOR/DESTRUCTOR
+static void __attribute__((constructor)) j_object_init(void);
+static void __attribute__((destructor)) j_object_fini(void);
+
+/**
+ * Initializes the object client.
+ */
+static void
+j_object_init(void)
+{
+	gchar const* object_backend;
+	gchar const* object_component;
+	gchar const* object_path;
+
+	if (j_object_backend != NULL && j_object_module != NULL)
+	{
+		return;
+	}
+
+	object_backend = j_configuration_get_backend(j_configuration(), J_BACKEND_TYPE_OBJECT);
+	object_component = j_configuration_get_backend_component(j_configuration(), J_BACKEND_TYPE_OBJECT);
+	object_path = j_configuration_get_backend_path(j_configuration(), J_BACKEND_TYPE_OBJECT);
+
+	if (j_backend_load_client(object_backend, object_component, J_BACKEND_TYPE_OBJECT, &j_object_module, &j_object_backend))
+	{
+		if (j_object_backend == NULL || !j_backend_object_init(j_object_backend, object_path))
+		{
+			g_critical("Could not initialize object backend %s.\n", object_backend);
+		}
+	}
+}
+
+/**
+ * Shuts down the object client.
+ */
+static void
+j_object_fini(void)
+{
+	if (j_object_backend == NULL && j_object_module == NULL)
+	{
+		return;
+	}
+
+	if (j_object_backend != NULL)
+	{
+		j_backend_object_fini(j_object_backend);
+		j_object_backend = NULL;
+	}
+
+	if (j_object_module != NULL)
+	{
+		g_module_close(j_object_module);
+		j_object_module = NULL;
+	}
+}
+
+static void
+j_object_create_free(gpointer data)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -111,9 +167,8 @@ j_object_create_free (gpointer data)
 	j_object_unref(object);
 }
 
-static
-void
-j_object_delete_free (gpointer data)
+static void
+j_object_delete_free(gpointer data)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -122,9 +177,8 @@ j_object_delete_free (gpointer data)
 	j_object_unref(object);
 }
 
-static
-void
-j_object_status_free (gpointer data)
+static void
+j_object_status_free(gpointer data)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -135,9 +189,8 @@ j_object_status_free (gpointer data)
 	g_slice_free(JObjectOperation, operation);
 }
 
-static
-void
-j_object_read_free (gpointer data)
+static void
+j_object_read_free(gpointer data)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -148,9 +201,8 @@ j_object_read_free (gpointer data)
 	g_slice_free(JObjectOperation, operation);
 }
 
-static
-void
-j_object_write_free (gpointer data)
+static void
+j_object_write_free(gpointer data)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -161,9 +213,8 @@ j_object_write_free (gpointer data)
 	g_slice_free(JObjectOperation, operation);
 }
 
-static
-gboolean
-j_object_create_exec (JList* operations, JSemantics* semantics)
+static gboolean
+j_object_create_exec(JList* operations, JSemantics* semantics)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -192,7 +243,7 @@ j_object_create_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
+	object_backend = j_object_get_backend();
 
 	if (object_backend == NULL)
 	{
@@ -257,9 +308,8 @@ j_object_create_exec (JList* operations, JSemantics* semantics)
 	return ret;
 }
 
-static
-gboolean
-j_object_delete_exec (JList* operations, JSemantics* semantics)
+static gboolean
+j_object_delete_exec(JList* operations, JSemantics* semantics)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -288,7 +338,7 @@ j_object_delete_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
+	object_backend = j_object_get_backend();
 
 	if (object_backend == NULL)
 	{
@@ -345,9 +395,8 @@ j_object_delete_exec (JList* operations, JSemantics* semantics)
 	return ret;
 }
 
-static
-gboolean
-j_object_read_exec (JList* operations, JSemantics* semantics)
+static gboolean
+j_object_read_exec(JList* operations, JSemantics* semantics)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -376,7 +425,7 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
+	object_backend = j_object_get_backend();
 
 	if (object_backend != NULL)
 	{
@@ -507,9 +556,8 @@ j_object_read_exec (JList* operations, JSemantics* semantics)
 	return ret;
 }
 
-static
-gboolean
-j_object_write_exec (JList* operations, JSemantics* semantics)
+static gboolean
+j_object_write_exec(JList* operations, JSemantics* semantics)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -538,7 +586,7 @@ j_object_write_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
+	object_backend = j_object_get_backend();
 
 	if (object_backend != NULL)
 	{
@@ -660,9 +708,8 @@ j_object_write_exec (JList* operations, JSemantics* semantics)
 	return ret;
 }
 
-static
-gboolean
-j_object_status_exec (JList* operations, JSemantics* semantics)
+static gboolean
+j_object_status_exec(JList* operations, JSemantics* semantics)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -692,7 +739,7 @@ j_object_status_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	object_backend = j_backend(J_BACKEND_TYPE_OBJECT);
+	object_backend = j_object_get_backend();
 
 	if (object_backend == NULL)
 	{
@@ -787,7 +834,7 @@ j_object_status_exec (JList* operations, JSemantics* semantics)
  * \return A new object. Should be freed with j_object_unref().
  **/
 JObject*
-j_object_new (gchar const* namespace, gchar const* name)
+j_object_new(gchar const* namespace, gchar const* name)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -822,7 +869,7 @@ j_object_new (gchar const* namespace, gchar const* name)
  * \return A new object. Should be freed with j_object_unref().
  **/
 JObject*
-j_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name)
+j_object_new_for_index(guint32 index, gchar const* namespace, gchar const* name)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -856,7 +903,7 @@ j_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name
  * \return #object.
  **/
 JObject*
-j_object_ref (JObject* object)
+j_object_ref(JObject* object)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -877,7 +924,7 @@ j_object_ref (JObject* object)
  * \param object An object.
  **/
 void
-j_object_unref (JObject* object)
+j_object_unref(JObject* object)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -905,7 +952,7 @@ j_object_unref (JObject* object)
  * \return A new object. Should be freed with j_object_unref().
  **/
 void
-j_object_create (JObject* object, JBatch* batch)
+j_object_create(JObject* object, JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -933,7 +980,7 @@ j_object_create (JObject* object, JBatch* batch)
  * \param batch      A batch.
  **/
 void
-j_object_delete (JObject* object, JBatch* batch)
+j_object_delete(JObject* object, JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -964,7 +1011,7 @@ j_object_delete (JObject* object, JBatch* batch)
  * \param batch      A batch.
  **/
 void
-j_object_read (JObject* object, gpointer data, guint64 length, guint64 offset, guint64* bytes_read, JBatch* batch)
+j_object_read(JObject* object, gpointer data, guint64 length, guint64 offset, guint64* bytes_read, JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -1026,7 +1073,7 @@ j_object_read (JObject* object, gpointer data, guint64 length, guint64 offset, g
  * \param batch         A batch.
  **/
 void
-j_object_write (JObject* object, gconstpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
+j_object_write(JObject* object, gconstpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -1081,7 +1128,7 @@ j_object_write (JObject* object, gconstpointer data, guint64 length, guint64 off
  * \param batch     A batch.
  **/
 void
-j_object_status (JObject* object, gint64* modification_time, guint64* size, JBatch* batch)
+j_object_status(JObject* object, gint64* modification_time, guint64* size, JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -1102,6 +1149,17 @@ j_object_status (JObject* object, gint64* modification_time, guint64* size, JBat
 	operation->free_func = j_object_status_free;
 
 	j_batch_add(batch, operation);
+}
+
+/**
+ * Returns the object backend.
+ *
+ * \return The object backend.
+ */
+JBackend*
+j_object_get_backend(void)
+{
+	return j_object_backend;
 }
 
 /**

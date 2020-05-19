@@ -34,7 +34,7 @@
 #include "../../backend/db/jbson.c"
 
 JDBSelector*
-j_db_selector_new (JDBSchema* schema, JDBSelectorMode mode, GError** error)
+j_db_selector_new(JDBSchema* schema, JDBSelectorMode mode, GError** error)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -43,7 +43,7 @@ j_db_selector_new (JDBSchema* schema, JDBSelectorMode mode, GError** error)
 
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
-	selector = g_slice_new(JDBSelector);
+	selector = j_helper_alloc_aligned(128, sizeof(JDBSelector));
 	selector->ref_count = 1;
 	selector->mode = mode;
 	selector->bson_count = 0;
@@ -70,7 +70,7 @@ _error:
 }
 
 JDBSelector*
-j_db_selector_ref (JDBSelector* selector)
+j_db_selector_ref(JDBSelector* selector)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -82,7 +82,7 @@ j_db_selector_ref (JDBSelector* selector)
 }
 
 void
-j_db_selector_unref (JDBSelector* selector)
+j_db_selector_unref(JDBSelector* selector)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -92,12 +92,12 @@ j_db_selector_unref (JDBSelector* selector)
 	{
 		j_db_schema_unref(selector->schema);
 		bson_destroy(&selector->bson);
-		g_slice_free(JDBSelector, selector);
+		g_free(selector);
 	}
 }
 
 gboolean
-j_db_selector_add_field (JDBSelector* selector, gchar const* name, JDBSelectorOperator operator, gconstpointer value, guint64 length, GError** error)
+j_db_selector_add_field(JDBSelector* selector, gchar const* name, JDBSelectorOperator operator, gconstpointer value, guint64 length, GError** error)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -192,7 +192,7 @@ _error:
 }
 
 gboolean
-j_db_selector_add_selector (JDBSelector* selector, JDBSelector* sub_selector, GError** error)
+j_db_selector_add_selector(JDBSelector* selector, JDBSelector* sub_selector, GError** error)
 {
 	J_TRACE_FUNCTION(NULL);
 

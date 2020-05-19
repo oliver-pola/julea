@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -24,8 +24,6 @@
 
 #include <glib.h>
 
-#include <jcommon.h>
-
 #include <jbackend.h>
 #include <jbackground-operation-internal.h>
 #include <jconfiguration.h>
@@ -44,44 +42,7 @@
  * @{
  **/
 
-/**
- * Common structure.
- */
-struct JCommon
-{
-	/**
-	 * The configuration.
-	 */
-	JConfiguration* configuration;
-
-	JBackend* object_backend;
-	JBackend* kv_backend;
-	JBackend* db_backend;
-
-	GModule* object_module;
-	GModule* kv_module;
-	GModule* db_module;
-};
-
-static JCommon* j_common = NULL;
-
-/**
- * Returns whether JULEA has been initialized.
- *
- * \private
- *
- * \return TRUE if JULEA has been initialized, FALSE otherwise.
- */
-static
-gboolean
-j_is_initialized (void)
-{
-	JCommon* p;
-
-	p = g_atomic_pointer_get(&j_common);
-
-	return (p != NULL);
-}
+static gboolean j_inited = FALSE;
 
 /**
  * Returns the program name.
@@ -92,9 +53,8 @@ j_is_initialized (void)
  *
  * \return The progran name if it can be determined, default_name otherwise.
  */
-static
-gchar*
-j_get_program_name (gchar const* default_name)
+static gchar*
+j_get_program_name(gchar const* default_name)
 {
 	gchar* program_name;
 
@@ -115,29 +75,20 @@ j_get_program_name (gchar const* default_name)
 	return program_name;
 }
 
+// FIXME copy and use GLib's G_DEFINE_CONSTRUCTOR/DESTRUCTOR
+static void __attribute__((constructor)) j_init(void);
+static void __attribute__((destructor)) j_fini(void);
+
 /**
  * Initializes JULEA.
- *
- * \param argc A pointer to \c argc.
- * \param argv A pointer to \c argv.
  */
-void
-j_init (void)
+static void
+j_init(void)
 {
-	JCommon* common;
 	JTrace* trace;
 	g_autofree gchar* basename = NULL;
-	gchar const* object_backend;
-	gchar const* object_component;
-	gchar const* object_path;
-	gchar const* kv_backend;
-	gchar const* kv_component;
-	gchar const* kv_path;
-	gchar const* db_backend;
-	gchar const* db_component;
-	gchar const* db_path;
 
-	if (j_is_initialized())
+	if (j_inited)
 	{
 		return;
 	}
@@ -149,80 +100,29 @@ j_init (void)
 		return;
 	}
 
-	common = g_slice_new(JCommon);
-	common->configuration = NULL;
-
 	j_trace_init(basename);
 	trace = j_trace_enter(G_STRFUNC, NULL);
 
-	common->configuration = j_configuration_new();
-
-	if (common->configuration == NULL)
+	if (j_configuration() == NULL)
 	{
 		goto error;
 	}
 
-	object_backend = j_configuration_get_backend(common->configuration, J_BACKEND_TYPE_OBJECT);
-	object_component = j_configuration_get_backend_component(common->configuration, J_BACKEND_TYPE_OBJECT);
-	object_path = j_configuration_get_backend_path(common->configuration, J_BACKEND_TYPE_OBJECT);
-
-	kv_backend = j_configuration_get_backend(common->configuration, J_BACKEND_TYPE_KV);
-	kv_component = j_configuration_get_backend_component(common->configuration, J_BACKEND_TYPE_KV);
-	kv_path = j_configuration_get_backend_path(common->configuration, J_BACKEND_TYPE_KV);
-
-	db_backend = j_configuration_get_backend(common->configuration, J_BACKEND_TYPE_DB);
-	db_component = j_configuration_get_backend_component(common->configuration, J_BACKEND_TYPE_DB);
-	db_path = j_configuration_get_backend_path(common->configuration, J_BACKEND_TYPE_DB);
-
-	if (j_backend_load_client(object_backend, object_component, J_BACKEND_TYPE_OBJECT, &(common->object_module), &(common->object_backend)))
-	{
-		if (common->object_backend == NULL || !j_backend_object_init(common->object_backend, object_path))
-		{
-			g_critical("Could not initialize object backend %s.\n", object_backend);
-			goto error;
-		}
-	}
-
-	if (j_backend_load_client(kv_backend, kv_component, J_BACKEND_TYPE_KV, &(common->kv_module), &(common->kv_backend)))
-	{
-		if (common->kv_backend == NULL || !j_backend_kv_init(common->kv_backend, kv_path))
-		{
-			g_critical("Could not initialize kv backend %s.\n", kv_backend);
-			goto error;
-		}
-	}
-
-	if (j_backend_load_client(db_backend, db_component, J_BACKEND_TYPE_DB, &(common->db_module), &(common->db_backend)))
-	{
-		if (common->db_backend == NULL || !j_backend_db_init(common->db_backend, db_path))
-		{
-			g_critical("Could not initialize db backend %s.\n", db_backend);
-			goto error;
-		}
-	}
-
-	j_connection_pool_init(common->configuration);
+	j_connection_pool_init(j_configuration());
 	j_distribution_init();
 	j_background_operation_init(0);
 	j_operation_cache_init();
 
-	g_atomic_pointer_set(&j_common, common);
+	j_inited = TRUE;
 
 	j_trace_leave(trace);
 
 	return;
 
 error:
-	if (common->configuration != NULL)
-	{
-		j_configuration_unref(common->configuration);
-	}
-
 	j_trace_leave(trace);
 
 	j_trace_fini();
-
-	g_slice_free(JCommon, common);
 
 	g_error("%s: Failed to initialize JULEA.", G_STRLOC);
 }
@@ -230,13 +130,12 @@ error:
 /**
  * Shuts down JULEA.
  */
-void
-j_fini (void)
+static void
+j_fini(void)
 {
-	JCommon* common;
 	JTrace* trace;
 
-	if (!j_is_initialized())
+	if (!j_inited)
 	{
 		return;
 	}
@@ -247,98 +146,11 @@ j_fini (void)
 	j_background_operation_fini();
 	j_connection_pool_fini();
 
-	common = g_atomic_pointer_get(&j_common);
-	g_atomic_pointer_set(&j_common, NULL);
-
-	if (common->db_backend != NULL)
-	{
-		j_backend_db_fini(common->db_backend);
-	}
-
-	if (common->kv_backend != NULL)
-	{
-		j_backend_kv_fini(common->kv_backend);
-	}
-
-	if (common->object_backend != NULL)
-	{
-		j_backend_object_fini(common->object_backend);
-	}
-
-	if (common->db_module)
-	{
-		g_module_close(common->db_module);
-	}
-
-	if (common->kv_module)
-	{
-		g_module_close(common->kv_module);
-	}
-
-	if (common->object_module)
-	{
-		g_module_close(common->object_module);
-	}
-
-	j_configuration_unref(common->configuration);
+	j_inited = FALSE;
 
 	j_trace_leave(trace);
 
 	j_trace_fini();
-
-	g_slice_free(JCommon, common);
-}
-
-/* Internal */
-
-/**
- * Returns the configuration.
- *
- * \private
- *
- * \return The configuration.
- */
-JConfiguration*
-j_configuration (void)
-{
-	JCommon* common;
-
-	g_return_val_if_fail(j_is_initialized(), NULL);
-
-	common = g_atomic_pointer_get(&j_common);
-
-	return common->configuration;
-}
-
-/**
- * Returns a backend.
- *
- * \param backend The backend to return.
- *
- * \return The object backend.
- */
-JBackend*
-j_backend (JBackendType backend)
-{
-	JCommon* common;
-
-	g_return_val_if_fail(j_is_initialized(), NULL);
-
-	common = g_atomic_pointer_get(&j_common);
-
-	switch (backend)
-	{
-		case J_BACKEND_TYPE_OBJECT:
-			return common->object_backend;
-		case J_BACKEND_TYPE_KV:
-			return common->kv_backend;
-		case J_BACKEND_TYPE_DB:
-			return common->db_backend;
-		default:
-			g_assert_not_reached();
-	}
-
-	return NULL;
 }
 
 /**

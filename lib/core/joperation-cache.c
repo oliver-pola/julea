@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -28,7 +28,6 @@
 
 #include <jbackground-operation-internal.h>
 #include <jcache.h>
-#include <jcommon.h>
 #include <jlist.h>
 #include <jlist-iterator.h>
 #include <jbatch.h>
@@ -92,9 +91,8 @@ typedef struct JCachedBatch JCachedBatch;
 
 static JOperationCache* j_operation_cache = NULL;
 
-static
-gpointer
-j_operation_cache_thread (gpointer data)
+static gpointer
+j_operation_cache_thread(gpointer data)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -130,9 +128,8 @@ j_operation_cache_thread (gpointer data)
 	return NULL;
 }
 
-static
-gboolean
-j_operation_cache_test (JOperation* operation)
+static gboolean
+j_operation_cache_test(JOperation* operation)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -167,9 +164,8 @@ j_operation_cache_test (JOperation* operation)
 	return ret;
 }
 
-static
-guint64
-j_operation_cache_get_required_size (JOperation* operation)
+static guint64
+j_operation_cache_get_required_size(JOperation* operation)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -205,7 +201,7 @@ j_operation_cache_get_required_size (JOperation* operation)
 }
 
 void
-j_operation_cache_init (void)
+j_operation_cache_init(void)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -226,7 +222,7 @@ j_operation_cache_init (void)
 }
 
 void
-j_operation_cache_fini (void)
+j_operation_cache_fini(void)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -253,7 +249,7 @@ j_operation_cache_fini (void)
 }
 
 gboolean
-j_operation_cache_flush (void)
+j_operation_cache_flush(void)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -272,7 +268,7 @@ j_operation_cache_flush (void)
 }
 
 gboolean
-j_operation_cache_add (JBatch* batch)
+j_operation_cache_add(JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 

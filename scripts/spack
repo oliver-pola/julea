@@ -1,5 +1,5 @@
 # JULEA - Flexible storage framework
-# Copyright (C) 2017-2019 Michael Kuhn
+# Copyright (C) 2017-2020 Michael Kuhn
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -18,7 +18,8 @@ spack_clone ()
 {
 	local spack_commit
 
-	spack_commit='b0abbfecb8595c8901855e679be0bbea64089fe8'
+	# FIXME maybe use release branch instead
+	spack_commit='1bc104e00e255798602073488279c0bc18fd1f09'
 
 	test -n "${SPACK_DIR}" || return 1
 
@@ -75,19 +76,17 @@ spack_install ()
 
 spack_load ()
 {
+	local pkg_loaded
 	local spack_pkg
 
+	pkg_loaded='YES'
 	spack_pkg="$1"
 
 	test -n "${spack_pkg}" || return 1
 
-	spack load --dependencies "${spack_pkg}"
+	spack load --dependencies "${spack_pkg}" || pkg_loaded='NO'
 
-	# FIXME https://github.com/spack/spack/pull/12838
-	if test "${spack_pkg}" = 'mariadb'
-	then
-		export PKG_CONFIG_PATH="$(spack location --install-dir mariadb)/share/pkgconfig:${PKG_CONFIG_PATH}"
-	fi
+	printf 'Dependency "%s" loaded: %s\n' "${spack_pkg}" "${pkg_loaded}"
 }
 
 spack_get_dependencies ()
@@ -98,16 +97,10 @@ spack_get_dependencies ()
 	dependencies=''
 	mode="$1"
 
-	if test "${mode}" != 'load'
+	if test "${mode}" = 'full' -o "${mode}" = 'standard' -o "${mode}" = 'minimal'
 	then
-		# FIXME only install if necessary? (command -v module > /dev/null 2>&1)
-		# Required for Spack itself
-		dependencies="${dependencies} environment-modules~X"
-	fi
-
-	if test "${mode}" = 'load' -o "${mode}" = 'install-full' -o "${mode}" = 'install-standard' -o "${mode}" = 'install-minimal'
-	then
-		# Required for Waf
+		# Required for building JULEA
+		dependencies="${dependencies} meson"
 		dependencies="${dependencies} pkgconfig"
 
 		# Mandatory dependencies
@@ -115,20 +108,25 @@ spack_get_dependencies ()
 		dependencies="${dependencies} libbson"
 	fi
 
-	if test "${mode}" = 'load' -o "${mode}" = 'install-full' -o "${mode}" = 'install-standard'
+	if test "${mode}" = 'full' -o "${mode}" = 'standard'
 	then
 		# Optional dependencies
 		dependencies="${dependencies} lmdb"
 		dependencies="${dependencies} sqlite"
-		dependencies="${dependencies} mariadb"
 	fi
 
-	if test "${mode}" = 'load' -o "${mode}" = 'install-full'
+	if test "${mode}" = 'full'
 	then
 		# Optional dependencies
 		dependencies="${dependencies} leveldb"
-		dependencies="${dependencies} libmongoc"
-		dependencies="${dependencies} hdf5@develop~mpi"
+		dependencies="${dependencies} mongo-c-driver"
+		dependencies="${dependencies} hdf5~mpi@1.12:"
+		dependencies="${dependencies} mariadb-c-client"
+		dependencies="${dependencies} rocksdb"
+
+		# FIXME move to minimal
+		# FIXME set fabrics
+		dependencies="${dependencies} libfabric"
 
 		#dependencies="${dependencies} mpi"
 		#dependencies="${dependencies} otf"
@@ -139,24 +137,22 @@ spack_get_dependencies ()
 
 spack_load_dependencies ()
 {
-	local minimal_pkgs
-
-	minimal_pkgs="$(spack_get_dependencies install-minimal)"
-
-	if spack_init
+	if test -z "${JULEA_SPACK_DEPENDENCIES_LOADED}"
 	then
-		for dependency in $(spack_get_dependencies load)
-		do
-			if test "${minimal_pkgs#*${dependency}}" != "${minimal_pkgs}"
-			then
+		if spack_init
+		then
+			for dependency in $(spack_get_dependencies full)
+			do
 				spack_load "${dependency}"
-			else
-				if ! spack_load "${dependency}"
-				then
-					echo "Dependency ${dependency} cannot be loaded. If you have not installed it, you can ignore the error above." >&2
-				fi
-			fi
-		done
+			done
+
+			# FIXME this could be more clever by storing the actual dependencies loaded
+			JULEA_SPACK_DEPENDENCIES_LOADED=1
+
+			export JULEA_SPACK_DEPENDENCIES_LOADED
+		fi
+	else
+		printf 'Dependencies have already been loaded, skipping.\n' >&2
 	fi
 }
 
@@ -170,8 +166,9 @@ spack_install_dependencies ()
 
 	if spack_clone
 	then
-		for dependency in $(spack_get_dependencies "install-${mode}")
+		for dependency in $(spack_get_dependencies "${mode}")
 		do
+			# FIXME ignore errors?
 			spack_install "${dependency}"
 		done
 	fi

@@ -1,6 +1,6 @@
 /*
  * JULEA - Flexible storage framework
- * Copyright (C) 2010-2019 Michael Kuhn
+ * Copyright (C) 2010-2020 Michael Kuhn
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -31,7 +31,6 @@
 
 #include <jcredentials.h>
 
-#include <jcommon.h>
 #include <jtrace.h>
 
 /**
@@ -51,22 +50,22 @@ struct JCredentials
 };
 
 JCredentials*
-j_credentials_new (void)
+j_credentials_new(void)
 {
 	J_TRACE_FUNCTION(NULL);
 
 	JCredentials* credentials;
 
 	credentials = g_slice_new(JCredentials);
-	credentials->user = geteuid();
-	credentials->group = getegid();
+	credentials->user = getuid();
+	credentials->group = getgid();
 	credentials->ref_count = 1;
 
 	return credentials;
 }
 
 JCredentials*
-j_credentials_ref (JCredentials* credentials)
+j_credentials_ref(JCredentials* credentials)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -78,7 +77,7 @@ j_credentials_ref (JCredentials* credentials)
 }
 
 void
-j_credentials_unref (JCredentials* credentials)
+j_credentials_unref(JCredentials* credentials)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -91,7 +90,7 @@ j_credentials_unref (JCredentials* credentials)
 }
 
 guint32
-j_credentials_get_user (JCredentials* credentials)
+j_credentials_get_user(JCredentials* credentials)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -101,7 +100,7 @@ j_credentials_get_user (JCredentials* credentials)
 }
 
 guint32
-j_credentials_get_group (JCredentials* credentials)
+j_credentials_get_group(JCredentials* credentials)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -122,10 +121,10 @@ j_credentials_get_group (JCredentials* credentials)
  *
  * \param credentials Credentials.
  *
- * \return A new BSON object. Should be freed with g_slice_free().
+ * \return A new BSON object. Should be freed with bson_destroy().
  **/
 bson_t*
-j_credentials_serialize (JCredentials* credentials)
+j_credentials_serialize(JCredentials* credentials)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -154,7 +153,7 @@ j_credentials_serialize (JCredentials* credentials)
  * \param b           A BSON object.
  **/
 void
-j_credentials_deserialize (JCredentials* credentials, bson_t const* b)
+j_credentials_deserialize(JCredentials* credentials, bson_t const* b)
 {
 	J_TRACE_FUNCTION(NULL);
 
