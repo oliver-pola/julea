@@ -245,12 +245,11 @@ j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
 		/**
 		 * Force safe semantics to make the server send a reply.
 		 * Otherwise, nasty races can occur when using unsafe semantics:
-		 * - The client creates the item and sends its first write.
+		 * - The client creates the object and sends its first write.
 		 * - The client sends another operation using another connection from the pool.
-		 * - The second operation is executed first and fails because the item does not exist.
+		 * - The second operation is executed first and fails because the object does not exist.
 		 * This does not completely eliminate all races but fixes the common case of create, write, write, ...
 		 **/
-        // TODO message type
 		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_CREATE, namespace_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
@@ -308,93 +307,6 @@ static
 gboolean
 j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 {
-	/* gboolean ret = FALSE; */
-    /*  */
-	/* JBackend* object_backend; */
-	/* g_autoptr(JListIterator) it = NULL; */
-	/* g_autoptr(JMessage) message = NULL; */
-	/* gchar const* namespace; */
-	/* gsize namespace_len; */
-	/* guint32 index; */
-    /*  */
-	/* g_return_val_if_fail(operations != NULL, FALSE); */
-	/* g_return_val_if_fail(semantics != NULL, FALSE); */
-    /*  */
-	/* j_trace_enter(G_STRFUNC, NULL); */
-    /*  */
-	/* { */
-	/* 	JTransformationObject* object; */
-    /*     g_autoptr(JBatch) kv_batch = NULL; */
-    /*  */
-	/* 	object = j_list_get_first(operations); */
-	/* 	g_assert(object != NULL); */
-    /*  */
-	/* 	namespace = object->namespace; */
-	/* 	namespace_len = strlen(namespace) + 1; */
-	/* 	index = object->index; */
-    /*  */
-    /*     // Also delete the metadata from the KV store */
-    /*     kv_batch = j_batch_new(semantics); */
-    /*     j_kv_delete(object->metadata, kv_batch); */
-    /*     j_batch_execute(kv_batch); */
-	/* } */
-    /*  */
-	/* it = j_list_iterator_new(operations); */
-	/* object_backend = j_object_backend(); */
-    /*  */
-	/* if (object_backend == NULL) */
-	/* { */
-	/* 	message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_DELETE, namespace_len); */
-	/* 	j_message_set_safety(message, semantics); */
-	/* 	j_message_append_n(message, namespace, namespace_len); */
-	/* } */
-    /*  */
-	/* while (j_list_iterator_next(it)) */
-	/* { */
-	/* 	JTransformationObject* object = j_list_iterator_get(it); */
-    /*  */
-	/* 	if (object_backend != NULL) */
-	/* 	{ */
-	/* 		gpointer object_handle; */
-    /*  */
-	/* 		ret = j_backend_object_open(object_backend, object->namespace, object->name, &object_handle) && ret; */
-	/* 		ret = j_backend_object_delete(object_backend, object_handle) && ret; */
-	/* 	} */
-	/* 	else */
-	/* 	{ */
-	/* 		gsize name_len; */
-    /*  */
-	/* 		name_len = strlen(object->name) + 1; */
-    /*  */
-	/* 		j_message_add_operation(message, name_len); */
-	/* 		j_message_append_n(message, object->name, name_len); */
-	/* 	} */
-	/* } */
-    /*  */
-	/* if (object_backend == NULL) */
-	/* { */
-	/* 	GSocketConnection* object_connection; */
-    /*  */
-	/* 	object_connection = j_connection_pool_pop_object(index); */
-	/* 	j_message_send(message, object_connection); */
-    /*  */
-	/* 	if (j_message_get_flags(message) & J_MESSAGE_FLAGS_SAFETY_NETWORK) */
-	/* 	{ */
-	/* 		g_autoptr(JMessage) reply = NULL; */
-    /*  */
-	/* 		reply = j_message_new_reply(message); */
-	/* 		j_message_receive(reply, object_connection); */
-    /*  */
-	/* 		#<{(| FIXME do something with reply |)}># */
-	/* 	} */
-    /*  */
-	/* 	j_connection_pool_push_object(index, object_connection); */
-	/* } */
-    /*  */
-    /*  */
-	/* j_trace_leave(G_STRFUNC); */
-    /*  */
-	/* return ret; */
 	J_TRACE_FUNCTION(NULL);
 
 	// FIXME check return value for messages
@@ -419,12 +331,6 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 		namespace = object->namespace;
 		namespace_len = strlen(namespace) + 1;
 		index = object->index;
-
-        /* // Delete the metadata entry in the kv-store */
-        /* g_autoptr(JBatch) kv_batch = NULL; */
-        /* kv_batch = j_batch_new(semantics); */
-        /* j_kv_delete(object->metadata, kv_batch); */
-        /* j_batch_execute(kv_batch); */
 	}
 
 
@@ -433,7 +339,6 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 
 	if (object_backend == NULL)
 	{
-        //TODO message type
 		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_DELETE, namespace_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
@@ -561,15 +466,16 @@ static
 void
 j_transformation_object_update_stored_metadata(JTransformationObject* object, JSemantics* semantics)
 {
-    // TODO mdata freigeben?
     g_autoptr(JBatch) kv_batch = NULL;
+    JTransformationObjectMetadata* mdata = NULL;
 
     kv_batch = j_batch_new(semantics);
-    gpointer mdata = malloc(sizeof(JTransformationObjectMetadata));
-    ((JTransformationObjectMetadata*)mdata)->transformation_type = object->transformation->type;
-    ((JTransformationObjectMetadata*)mdata)->transformation_mode = object->transformation->mode;
-    ((JTransformationObjectMetadata*)mdata)->original_size = object->original_size;
-    ((JTransformationObjectMetadata*)mdata)->transformed_size = object->transformed_size;
+    mdata = g_new(JTransformationObjectMetadata, 1);
+
+    mdata->transformation_type = object->transformation->type;
+    mdata->transformation_mode = object->transformation->mode;
+    mdata->original_size = object->original_size;
+    mdata->transformed_size = object->transformed_size;
 
     j_kv_put(object->metadata, mdata, sizeof(JTransformationObjectMetadata), g_free, kv_batch);
     j_batch_execute(kv_batch);
@@ -630,7 +536,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-        //TODO message type
 		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_READ, namespace_len + name_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
@@ -640,7 +545,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	/*
 	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
 	{
-		lock = j_lock_new("item", path);
+		lock = j_lock_new("object", path);
 	}
 	*/
 
@@ -678,7 +583,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
                 free(transformed_data);
                 j_transformation_cleanup(transformation, whole_data_buf, data_size, offset, 
                         J_TRANSFORMATION_CALLER_CLIENT_READ);
-                // TODO check for memory leak.
             }
             else
             {
@@ -753,8 +657,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
                         j_transformation_apply(transformation, transformed_data, transformed_length,
                                 offset, &whole_data_buf, &data_size, &offset,
                                 J_TRANSFORMATION_CALLER_CLIENT_READ);
-                        // TODO check for memory leak. should be fine, because the modified read buffer is freed
-                        // in the _apply function
                         memcpy(operation->read.data, ((char*)whole_data_buf)+operation->read.offset, operation->read.length);
                         free(transformed_data);
                         j_transformation_cleanup(transformation, whole_data_buf, data_size, offset, 
@@ -794,7 +696,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
                 j_transformation_apply(transformation, data, length, offset, &data, &length, &offset,
                         J_TRANSFORMATION_CALLER_CLIENT_READ);
-                // TODO check for memory leak.
             }
             else
             {
@@ -864,7 +765,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
                         j_transformation_apply(transformation, data, length, offset, &data, &length, &offset,
                                 J_TRANSFORMATION_CALLER_CLIENT_READ);
-                        // TODO check for memory leak. 
                     }
                 }
 
@@ -944,7 +844,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		namespace_len = strlen(object->namespace) + 1;
 		name_len = strlen(object->name) + 1;
 
-        //TODO message type
 		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_WRITE, namespace_len + name_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, object->namespace, namespace_len);
@@ -954,7 +853,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	/*
 	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
 	{
-		lock = j_lock_new("item", path);
+		lock = j_lock_new("object", path);
 	}
 	*/
 
@@ -975,7 +874,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             //If the object is not empty we need to read all of the transformed data
             if(object->original_size != 0)
             {
-                //TODO Read the whole object
                 whole_data_buf = malloc(object->original_size);
                 g_autoptr(JBatch) read_batch = NULL;
                 guint64 bytes_read = 0;
@@ -1041,8 +939,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
                 // Fake bytes_written here instead of doing another loop further down
                 if (j_semantics_get(semantics, J_SEMANTICS_SAFETY) == J_SEMANTICS_SAFETY_NONE)
                 {
-                    // TODO which value to add here? the actual write size (whole object) or fake
-                    // the bytes of the called write operation
                     j_helper_atomic_add(bytes_written, data_size);
                 }
             }
@@ -1247,7 +1143,6 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 
 	if (object_backend == NULL)
 	{
-        //TODO message type
 		message = j_message_new(J_MESSAGE_TRANSFORMATION_OBJECT_STATUS, namespace_len);
 		j_message_set_semantics(message, semantics);
 		j_message_append_n(message, namespace, namespace_len);
@@ -1343,7 +1238,7 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 
 
 /**
- * Creates a new item.
+ * Creates a new TransformationObject
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -1353,10 +1248,10 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
  * i = j_transformation_object_new("JULEA");
  * \endcode
  *
- * \param name         An item name.
- * \param distribution A distribution.
+ * \param namespace The objects namespace
+ * \param name The objects name
  *
- * \return A new item. Should be freed with j_transformation_object_unref().
+ * \return A new object. Should be freed with j_transformation_object_unref().
  **/
 JTransformationObject*
 j_transformation_object_new (gchar const* namespace, gchar const* name)
@@ -1383,43 +1278,22 @@ j_transformation_object_new (gchar const* namespace, gchar const* name)
 }
 
 /**
- * Creates a new item.
+ * Creates a new TransformationObject.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
- * JTransformationObject* i;
- *
- * i = j_transformation_object_new("JULEA");
  * \endcode
  *
- * \param name         An item name.
- * \param distribution A distribution.
+ * \param index The wanted index
+ * \param namespace The objects namespace
+ * \param name The objects name
  *
- * \return A new item. Should be freed with j_transformation_object_unref().
+ * \return A new object. Should be freed with j_transformation_object_unref().
  **/
 JTransformationObject*
 j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name)
 {
-	/* JConfiguration* configuration = j_configuration(); */
-	/* JTransformationObject* object; */
-    /*  */
-	/* g_return_val_if_fail(namespace != NULL, NULL); */
-	/* g_return_val_if_fail(name != NULL, NULL); */
-	/* g_return_val_if_fail(index < j_configuration_get_object_server_count(configuration), NULL); */
-    /*  */
-	/* j_trace_enter(G_STRFUNC, NULL); */
-    /*  */
-	/* object = g_slice_new(JTransformationObject); */
-	/* object->index = index; */
-	/* object->namespace = g_strdup(namespace); */
-	/* object->name = g_strdup(name); */
-	/* object->ref_count = 1; */
-    /* object->metadata = j_kv_new(namespace, name); */
-    /*  */
-	/* j_trace_leave(G_STRFUNC); */
-    /*  */
-	/* return object; */
 	J_TRACE_FUNCTION(NULL);
 
 	JConfiguration* configuration = j_configuration();
@@ -1443,7 +1317,7 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
 }
 
 /**
- * Increases an item's reference count.
+ * Increases an object's reference count.
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -1453,9 +1327,9 @@ j_transformation_object_new_for_index (guint32 index, gchar const* namespace, gc
  * j_transformation_object_ref(i);
  * \endcode
  *
- * \param item An item.
+ * \param object An object
  *
- * \return #item.
+ * \return #object
  **/
 JTransformationObject*
 j_transformation_object_ref (JTransformationObject* object)
@@ -1470,35 +1344,19 @@ j_transformation_object_ref (JTransformationObject* object)
 }
 
 /**
- * Decreases an item's reference count.
- * When the reference count reaches zero, frees the memory allocated for the item.
+ * Decreases an object's reference count.
+ * When the reference count reaches zero, frees the memory allocated for the object.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
  *
- * \param item An item.
+ * \param object An object.
  **/
 void
 j_transformation_object_unref (JTransformationObject* object)
 {
-	/* g_return_if_fail(item != NULL); */
-    /*  */
-	/* j_trace_enter(G_STRFUNC, NULL); */
-    /*  */
-	/* if (g_atomic_int_dec_and_test(&(item->ref_count))) */
-	/* { */
-	/* 	g_free(item->name); */
-	/* 	g_free(item->namespace); */
-    /*  */
-	/* 	if (item->transformation) */
-	/* 		j_transformation_unref(item->transformation); */
-    /*  */
-	/* 	g_slice_free(JTransformationObject, item); */
-	/* } */
-    /*  */
-	/* j_trace_leave(G_STRFUNC); */
 	J_TRACE_FUNCTION(NULL);
 
 	g_return_if_fail(object != NULL);
@@ -1520,11 +1378,13 @@ j_transformation_object_unref (JTransformationObject* object)
  * \code
  * \endcode
  *
- * \param name         A name.
- * \param distribution A distribution.
- * \param batch        A batch.
+ * \param object A pointer to the created object
+ * \param batch A batch
+ * \param type The transformation type
+ * \param mode The transformation mode
+ * \param params Optional parameters for the transformation
  *
- * \return A new item. Should be freed with j_transformation_object_unref().
+ * \return A new object. Should be freed with j_transformation_object_unref().
  **/
 void
 j_transformation_object_create (JTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, void* params)
@@ -1570,27 +1430,12 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
  * \code
  * \endcode
  *
- * \param item       An item.
+ * \param object       An object.
  * \param batch      A batch.
  **/
 void
 j_transformation_object_delete (JTransformationObject* object, JBatch* batch)
 {
-	/* JOperation* operation; */
-    /*  */
-	/* g_return_if_fail(object != NULL); */
-    /*  */
-	/* j_trace_enter(G_STRFUNC, NULL); */
-    /*  */
-	/* operation = j_operation_new(); */
-	/* operation->key = object; */
-	/* operation->data = j_transformation_object_ref(object); */
-	/* operation->exec_func = j_transformation_object_delete_exec; */
-	/* operation->free_func = j_transformation_object_delete_free; */
-    /*  */
-	/* j_batch_add(batch, operation); */
-    /*  */
-	/* j_trace_leave(G_STRFUNC); */
 	J_TRACE_FUNCTION(NULL);
 
 	JOperation* operation;
@@ -1607,7 +1452,7 @@ j_transformation_object_delete (JTransformationObject* object, JBatch* batch)
 }
 
 /**
- * Reads an item.
+ * Reads an object.
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -1668,7 +1513,7 @@ j_transformation_object_read (JTransformationObject* object, gpointer data, guin
 }
 
 /**
- * Writes an item.
+ * Writes an object.
  *
  * \note
  * j_transformation_object_write() modifies bytes_written even if j_batch_execute() is not called.
@@ -1678,10 +1523,10 @@ j_transformation_object_read (JTransformationObject* object, gpointer data, guin
  * \code
  * \endcode
  *
- * \param item          An item.
+ * \param object          An object.
  * \param data          A buffer holding the data to write.
  * \param length        Number of bytes to write.
- * \param offset        An offset within #item.
+ * \param offset        An offset within #object.
  * \param bytes_written Number of bytes written.
  * \param batch         A batch.
  **/
@@ -1733,15 +1578,17 @@ j_transformation_object_write (JTransformationObject* object, gconstpointer data
 
 
 /**
- * Get the status of an item.
+ * Get the status of an object.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
  *
- * \param item      An item.
- * \param batch     A batch.
+ * \param object A pointer to an object
+ * \param modification_time Return parameter for the last modification time of the object
+ * \param size Return parameter for the objects original size
+ * \param batch A batch
  **/
 void
 j_transformation_object_status (JTransformationObject* object, gint64* modification_time,
@@ -1751,15 +1598,19 @@ j_transformation_object_status (JTransformationObject* object, gint64* modificat
 }
 
 /**
- * Get the status of an item with transformation properties.
+ * Get the status of an object with transformation properties.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
  *
- * \param item      An item.
- * \param batch     A batch.
+ * \param object A pointer to the object
+ * \param modification_time Return parameter for the last modification timestamp
+ * \param original_size Return parameter for the original size of the objects data
+ * \param transformed_size Return parameter for the transformed size of the objects data
+ * \param transformation type Return parameter the objects transformation type
+ * \param batch A batch
  **/
 void
 j_transformation_object_status_ext (JTransformationObject* object, gint64* modification_time,

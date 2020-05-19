@@ -212,23 +212,22 @@ j_chunked_transformation_object_write_free (gpointer data)
 }
 
 static
-gboolean
+void
 j_chunked_transformation_object_store_metadata(JChunkedTransformationObject* object, JSemantics* semantics)
 {
-    bool ret = false;
-    // TODO mdata freigeben?
     g_autoptr(JBatch) kv_batch = NULL;
+    JChunkedTransformationObjectMetadata* mdata = NULL;
 
     kv_batch = j_batch_new(semantics);
-    gpointer mdata = malloc(sizeof(JChunkedTransformationObjectMetadata));
-    ((JChunkedTransformationObjectMetadata*)mdata)->transformation_type = object->transformation_type;
-    ((JChunkedTransformationObjectMetadata*)mdata)->transformation_mode = object->transformation_mode; 
-    ((JChunkedTransformationObjectMetadata*)mdata)->chunk_count = object->chunk_count;
-    ((JChunkedTransformationObjectMetadata*)mdata)->chunk_size = object->chunk_size;
-    j_kv_put(object->metadata, mdata, sizeof(JChunkedTransformationObjectMetadata), g_free, kv_batch);
-    ret = j_batch_execute(kv_batch);
+    mdata = g_new(JChunkedTransformationObjectMetadata, 1);
 
-    return ret;
+    mdata->transformation_type = object->transformation_type;
+    mdata->transformation_mode = object->transformation_mode; 
+    mdata->chunk_count = object->chunk_count;
+    mdata->chunk_size = object->chunk_size;
+
+    j_kv_put(object->metadata, mdata, sizeof(JChunkedTransformationObjectMetadata), g_free, kv_batch);
+    j_batch_execute(kv_batch);
 }
 
 static
@@ -380,9 +379,7 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
         JChunkedTransformationObjectOperation* op = j_list_iterator_get(it);
         JChunkedTransformationObject* object = op->read.object;
 
-        // TODO only load parts?
         j_chunked_transformation_object_load_metadata(object);
-        
 
         gchar* data = op->read.data;
         guint64 length = op->read.length;
@@ -428,16 +425,6 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
         {
             *(op->read.bytes_read) += local_bytes_read[i];
         }
-        
-        /* g_autofree gchar* chunk_name = g_strdup_printf("%s_%d", object->name, 0); */
-        /* g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new( */
-        /*         object->namespace, chunk_name); */
-        /* g_autoptr(JBatch) batch = j_batch_new(semantics); */
-        /*  */
-        /* j_transformation_object_read(chunk_object, op->read.data, op->read.length, */
-        /*         op->read.offset, op->read.bytes_read, batch); */
-        /*  */
-        /* j_batch_execute(batch); */
     }
 
     return ret;
@@ -463,9 +450,7 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
         JChunkedTransformationObjectOperation* op = j_list_iterator_get(it);
         JChunkedTransformationObject* object = op->write.object;
 
-        // TODO only load parts?
         j_chunked_transformation_object_load_metadata(object);
-        
 
         gchar* data = op->write.data;
         guint64 length = op->write.length;
@@ -515,7 +500,6 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
             *(op->write.bytes_written) += local_bytes_written[i];
         }
 
-        // TODO only store parts?
         j_chunked_transformation_object_store_metadata(object, semantics);
     }
 
@@ -543,7 +527,6 @@ j_chunked_transformation_object_status_exec (JList* operations, JSemantics* sema
         JChunkedTransformationObjectOperation* op = j_list_iterator_get(it);
         JChunkedTransformationObject* object = op->status.object;
 
-        // TODO only load parts?
         j_chunked_transformation_object_load_metadata(object);
 
         gint64 local_mod_time[object->chunk_count];
@@ -604,7 +587,7 @@ j_chunked_transformation_object_status_exec (JList* operations, JSemantics* sema
 
 
 /**
- * Creates a new item.
+ * Creates a new object.
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -614,10 +597,10 @@ j_chunked_transformation_object_status_exec (JList* operations, JSemantics* sema
  * i = j_chunked_transformation_object_new("JULEA");
  * \endcode
  *
- * \param name         An item name.
- * \param distribution A distribution.
+ * \param namespace The objects namespace
+ * \param name The objects name
  *
- * \return A new item. Should be freed with j_chunked_transformation_object_unref().
+ * \return A new object. Should be freed with j_chunked_transformation_object_unref().
  **/
 JChunkedTransformationObject*
 j_chunked_transformation_object_new (gchar const* namespace, gchar const* name)
@@ -643,7 +626,7 @@ j_chunked_transformation_object_new (gchar const* namespace, gchar const* name)
 }
 
 /**
- * Creates a new item.
+ * Creates a new object.
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -653,10 +636,11 @@ j_chunked_transformation_object_new (gchar const* namespace, gchar const* name)
  * i = j_chunked_transformation_object_new("JULEA");
  * \endcode
  *
- * \param name         An item name.
- * \param distribution A distribution.
+ * \param index The wanted index
+ * \param namespace The objects namespace
+ * \param name The objects name
  *
- * \return A new item. Should be freed with j_chunked_transformation_object_unref().
+ * \return A new object. Should be freed with j_chunked_transformation_object_unref().
  **/
 JChunkedTransformationObject*
 j_chunked_transformation_object_new_for_index (guint32 index, gchar const* namespace, gchar const* name)
@@ -682,7 +666,7 @@ j_chunked_transformation_object_new_for_index (guint32 index, gchar const* names
 }
 
 /**
- * Increases an item's reference count.
+ * Increases an object's reference count.
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -692,9 +676,9 @@ j_chunked_transformation_object_new_for_index (guint32 index, gchar const* names
  * j_chunked_transformation_object_ref(i);
  * \endcode
  *
- * \param item An item.
+ * \param object An object.
  *
- * \return #item.
+ * \return #object.
  **/
 JChunkedTransformationObject*
 j_chunked_transformation_object_ref (JChunkedTransformationObject* object)
@@ -709,15 +693,15 @@ j_chunked_transformation_object_ref (JChunkedTransformationObject* object)
 }
 
 /**
- * Decreases an item's reference count.
- * When the reference count reaches zero, frees the memory allocated for the item.
+ * Decreases an object's reference count.
+ * When the reference count reaches zero, frees the memory allocated for the object.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
  *
- * \param item An item.
+ * \param object An object.
  **/
 void
 j_chunked_transformation_object_unref (JChunkedTransformationObject* object)
@@ -743,11 +727,14 @@ j_chunked_transformation_object_unref (JChunkedTransformationObject* object)
  * \code
  * \endcode
  *
- * \param name         A name.
- * \param distribution A distribution.
- * \param batch        A batch.
+ * \param object A pointer to the created object
+ * \param batch A batch
+ * \param type The transformation type
+ * \param mode The transformation mode
+ * \param chunk_size The maximum chunk size for each chunk
+ * \param params Optional parameters for the transformation
  *
- * \return A new item. Should be freed with j_chunked_transformation_object_unref().
+ * \return A new object. Should be freed with j_chunked_transformation_object_unref().
  **/
 void
 j_chunked_transformation_object_create (JChunkedTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, guint64 chunk_size, void* params)
@@ -780,7 +767,7 @@ j_chunked_transformation_object_create (JChunkedTransformationObject* object, JB
  * \code
  * \endcode
  *
- * \param item       An item.
+ * \param object       An object.
  * \param batch      A batch.
  **/
 void
@@ -802,7 +789,7 @@ j_chunked_transformation_object_delete (JChunkedTransformationObject* object, JB
 }
 
 /**
- * Reads an item.
+ * Reads an object.
  *
  * \author Michael Blesel, Oliver Pola
  *
@@ -848,7 +835,7 @@ j_chunked_transformation_object_read (JChunkedTransformationObject* object, gpoi
 }
 
 /**
- * Writes an item.
+ * Writes an object.
  *
  * \note
  * j_chunked_transformation_object_write() modifies bytes_written even if j_batch_execute() is not called.
@@ -858,10 +845,10 @@ j_chunked_transformation_object_read (JChunkedTransformationObject* object, gpoi
  * \code
  * \endcode
  *
- * \param item          An item.
+ * \param object          An object.
  * \param data          A buffer holding the data to write.
  * \param length        Number of bytes to write.
- * \param offset        An offset within #item.
+ * \param offset        An offset within #object.
  * \param bytes_written Number of bytes written.
  * \param batch         A batch.
  **/
@@ -897,15 +884,17 @@ j_chunked_transformation_object_write (JChunkedTransformationObject* object, gco
 
 
 /**
- * Get the status of an item.
+ * Get the status of an object.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
  *
- * \param item      An item.
- * \param batch     A batch.
+ * \param object A pointer to an object
+ * \param modification_time Return parameter for the last modification time of the object
+ * \param size Return parameter for the objects original size
+ * \param batch A batch
  **/
 void
 j_chunked_transformation_object_status (JChunkedTransformationObject* object, gint64* modification_time,
@@ -916,15 +905,21 @@ j_chunked_transformation_object_status (JChunkedTransformationObject* object, gi
 }
 
 /**
- * Get the status of an item with transformation properties.
+ * Get the status of an object with transformation properties.
  *
  * \author Michael Blesel, Oliver Pola
  *
  * \code
  * \endcode
  *
- * \param item      An item.
- * \param batch     A batch.
+ * \param object A pointer to the object
+ * \param modification_time Return parameter for the last modification timestamp
+ * \param original_size Return parameter for the original size of the objects data
+ * \param transformed_size Return parameter for the transformed size of the objects data
+ * \param transformation type Return parameter the objects transformation type
+ * \param chunk_count Return parameter for the number of used chunks
+ * \param chunk_size Return parameter for the maximum chunk size
+ * \param batch A batch
  **/
 void
 j_chunked_transformation_object_status_ext (JChunkedTransformationObject* object, gint64* modification_time,
