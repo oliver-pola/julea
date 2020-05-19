@@ -113,6 +113,7 @@ spack_get_dependencies ()
 		# Optional dependencies
 		dependencies="${dependencies} lmdb"
 		dependencies="${dependencies} sqlite"
+        dependencies="${dependencies} lz4"
 	fi
 
 	if test "${mode}" = 'full'

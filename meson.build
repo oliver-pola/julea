@@ -96,6 +96,8 @@ sqlite_version = '3.22.0'
 mariadb_version = '3.0.3'
 # Ubuntu 18.04 has RocksDB 5.8.8
 rocksdb_version = '5.8.8'
+# Check for minimal version on Ubuntu
+lz4_version = '1.9.0'
 
 # Dependencies
 
@@ -143,6 +145,11 @@ libmongoc_dep = dependency('libmongoc-1.0',
 	#include_type: 'system'
 )
 
+lz4_dep = dependency('liblz4',
+    version: '>= @0@'.format(lz4_version),
+    required: false,
+)
+
 rados_dep = cc.find_library('rados',
 	has_headers: ['rados/librados.h'],
 	required: false,
@@ -152,6 +159,7 @@ hdf_dep = cc.find_library('hdf5',
 	has_headers: ['hdf5.h', 'H5PLextern.h'],
 	required: false,
 )
+
 
 fuse_dep = dependency('fuse',
 	required: false,
@@ -287,6 +295,7 @@ configure_file(
 
 # Build
 
+# TODO lz4 dep here?
 common_deps = [m_dep, glib_dep, gio_dep, gmodule_dep, gthread_dep, gobject_dep, libbson_dep]
 
 # FIXME Remove core directory
@@ -340,16 +349,16 @@ pkg_config.generate(julea_lib,
 )
 
 julea_client_srcs = {
+	'kv': files([
+		'lib/kv/jkv.c',
+		'lib/kv/jkv-iterator.c',
+		'lib/kv/jkv-uri.c',
+	]),
 	'object': files([
 		'lib/object/jdistributed-object.c',
 		'lib/object/jobject.c',
 		'lib/object/jobject-iterator.c',
 		'lib/object/jobject-uri.c',
-	]),
-	'kv': files([
-		'lib/kv/jkv.c',
-		'lib/kv/jkv-iterator.c',
-		'lib/kv/jkv-uri.c',
 	]),
 	'db': files([
 		'lib/db/jdb.c',
@@ -365,7 +374,12 @@ julea_client_srcs = {
 		'lib/item/jitem.c',
 		'lib/item/jitem-iterator.c',
 		'lib/item/juri.c',
-	])
+	]),
+    'transformation': files([
+        'lib/transformation/jtransformation-object.c',
+        'lib/transformation/jchunked-transformation-object.c',
+        'lib/transformation/jtransformation.c',
+    ]),
 }
 
 if hdf_dep.found()
@@ -388,6 +402,11 @@ foreach client, srcs: julea_client_srcs
 		extra_deps += julea_client_deps['object']
 		extra_deps += julea_client_deps['kv']
 		extra_deps += hdf_dep
+    # TODO eigener client für transformationobjects
+    elif client == 'transformation'
+        extra_deps += julea_client_deps['object']
+        extra_deps += julea_client_deps['kv']
+        extra_deps += lz4_dep
 	endif
 
 	julea_client_lib = shared_library('julea-@0@'.format(client), julea_client_srcs[client],
@@ -583,7 +602,7 @@ julea_cli_srcs = files([
 ])
 
 executable('julea-cli', julea_cli_srcs,
-	dependencies: common_deps + [julea_dep, julea_client_deps['object'], julea_client_deps['kv'], julea_client_deps['item']],
+	dependencies: common_deps + [julea_dep, julea_client_deps['object'], julea_client_deps['kv'], julea_client_deps['item'], julea_client_deps['transformation']],
 	include_directories: julea_incs,
 	install: true,
 )
@@ -685,6 +704,11 @@ julea_client_hdrs = {
 		'include/object/jobject-iterator.h',
 		'include/object/jobject-uri.h',
 	]),
+    'transformation': files([
+        'include/transformation/jtransformation-object.h',
+        'include/transformation/jchunked-transformation-object.h',
+        'include/transformation/jtransformation.h',
+    ]),
 }
 
 if hdf_dep.found()
@@ -707,6 +731,7 @@ julea_hdrs = files([
 	'include/julea-item.h',
 	'include/julea-kv.h',
 	'include/julea-object.h',
+    'include/julea-transformation.h',
 ])
 
 if hdf_dep.found()

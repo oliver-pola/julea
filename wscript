@@ -168,6 +168,7 @@ def options(ctx):
 	ctx.add_option('--otf', action='store', default=None, help='OTF prefix')
 	ctx.add_option('--sqlite', action='store', default=None, help='SQLite prefix')
 	ctx.add_option('--mariadb', action='store', default=None, help='MariaDB prefix')
+        ctx.add_option('--lz4',action='store',default=None,help='lz4 prefix')
 
 
 def configure(ctx):
@@ -209,6 +210,15 @@ def configure(ctx):
 		pkg_config_path=get_pkg_config_path(ctx.options.libfabric),
 		mandatory=False
 	)
+
+        check_cfg_rpath(
+                ctx,
+                package='liblz4',
+                args=['--cflags', '--libs'],
+                uselib_store = 'LZ4',
+                pkg_config_path = get_pkg_config_path(ctx.options.lz4),
+                mandatory=False
+        )
 
 	check_cfg_rpath(
 		ctx,
