@@ -209,9 +209,10 @@ j_chunked_transformation_object_write_free (gpointer data)
 }
 
 static
-void
+gboolean
 j_chunked_transformation_object_store_metadata(JChunkedTransformationObject* object, JSemantics* semantics)
 {
+    gboolean ret = false;
     g_autoptr(JBatch) kv_batch = NULL;
     JChunkedTransformationObjectMetadata* mdata = NULL;
 
@@ -224,7 +225,9 @@ j_chunked_transformation_object_store_metadata(JChunkedTransformationObject* obj
     mdata->chunk_size = object->chunk_size;
 
     j_kv_put(object->metadata, mdata, sizeof(JChunkedTransformationObjectMetadata), g_free, kv_batch);
-    j_batch_execute(kv_batch);
+    ret = j_batch_execute(kv_batch);
+
+    return ret;
 }
 
 static
@@ -292,12 +295,8 @@ j_chunked_transformation_object_create_exec (JList* operations, JSemantics* sema
 
         if(created)
         {
-            g_autoptr(JBatch) kv_batch = NULL;
-
             object->chunk_count = 1;
-
             j_chunked_transformation_object_store_metadata(object, semantics);
-    
         }
 	}
 
@@ -334,7 +333,7 @@ j_chunked_transformation_object_delete_exec (JList* operations, JSemantics* sema
 
         for(guint64 i = 0; i < object->chunk_count; i++)
         {
-            g_autofree gchar* chunk_name = g_strdup_printf("%s_%d", object->name, i);
+            g_autofree gchar* chunk_name = g_strdup_printf("%s_%ld", object->name, i);
             g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new(
                     object->namespace, chunk_name);
 
@@ -348,7 +347,7 @@ j_chunked_transformation_object_delete_exec (JList* operations, JSemantics* sema
         {
             kv_batch = j_batch_new(semantics);
             j_kv_delete(object->metadata, kv_batch);
-            j_batch_execute(kv_batch);
+            ret = j_batch_execute(kv_batch);
         }
 	}
 
@@ -403,7 +402,7 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
                 break;
             }
 
-            g_autofree gchar* chunk_name = g_strdup_printf("%s_%d", object->name, chunk_id);
+            g_autofree gchar* chunk_name = g_strdup_printf("%s_%ld", object->name, chunk_id);
             g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new(
                     object->namespace, chunk_name);
 
@@ -416,7 +415,7 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
             offset += local_length;
         }
 
-        j_batch_execute(batch);
+        ret = j_batch_execute(batch);
         
         for(guint64 i = 0; i < counter; i++)
         {
@@ -470,7 +469,7 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
                 local_length = length;
             }
 
-            g_autofree gchar* chunk_name = g_strdup_printf("%s_%d", object->name, chunk_id);
+            g_autofree gchar* chunk_name = g_strdup_printf("%s_%ld", object->name, chunk_id);
             g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new(
                     object->namespace, chunk_name);
 
@@ -490,7 +489,7 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
             offset += local_length;
         }
 
-        j_batch_execute(batch);
+        ret = j_batch_execute(batch);
         
         for(guint64 i = 0; i < counter; i++)
         {
@@ -533,7 +532,7 @@ j_chunked_transformation_object_status_exec (JList* operations, JSemantics* sema
 
         for(guint64 i = 0; i < object->chunk_count; i++)
         {
-            g_autofree gchar* chunk_name = g_strdup_printf("%s_%d", object->name, i);
+            g_autofree gchar* chunk_name = g_strdup_printf("%s_%ld", object->name, i);
             g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new(
                     object->namespace, chunk_name);
 

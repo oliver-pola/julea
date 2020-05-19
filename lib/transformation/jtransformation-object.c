@@ -293,7 +293,6 @@ j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	/* object_backend = j_backend(J_BACKEND_TYPE_OBJECT); */
     object_backend = j_object_get_backend();
 
 	if (object_backend == NULL)
@@ -391,7 +390,6 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
 
 
 	it = j_list_iterator_new(operations);
-	/* object_backend = j_backend(J_BACKEND_TYPE_OBJECT); */
     object_backend = j_object_get_backend();
 
 	if (object_backend == NULL)
@@ -409,7 +407,7 @@ j_transformation_object_delete_exec (JList* operations, JSemantics* semantics)
         g_autoptr(JBatch) kv_batch = NULL;
         kv_batch = j_batch_new(semantics);
         j_kv_delete(object->metadata, kv_batch);
-        j_batch_execute(kv_batch);
+        ret = j_batch_execute(kv_batch);
 
 		if (object_backend != NULL)
 		{
@@ -520,9 +518,10 @@ j_transformation_object_load_object_size(JTransformationObject* object, JSemanti
 }
 
 static
-void
+gboolean
 j_transformation_object_update_stored_metadata(JTransformationObject* object, JSemantics* semantics)
 {
+    gboolean ret = FALSE;
     g_autoptr(JBatch) kv_batch = NULL;
     JTransformationObjectMetadata* mdata = NULL;
 
@@ -535,7 +534,9 @@ j_transformation_object_update_stored_metadata(JTransformationObject* object, JS
     mdata->transformed_size = object->transformed_size;
 
     j_kv_put(object->metadata, mdata, sizeof(JTransformationObjectMetadata), g_free, kv_batch);
-    j_batch_execute(kv_batch);
+    ret = j_batch_execute(kv_batch);
+
+    return ret;
 }
 
 static
@@ -579,7 +580,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	/* object_backend = j_backend(J_BACKEND_TYPE_OBJECT); */
     object_backend = j_object_get_backend();
 
 	if (object_backend != NULL)
@@ -888,7 +888,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	/* object_backend = j_backend(J_BACKEND_TYPE_OBJECT); */
     object_backend = j_object_get_backend();
 
 	if (object_backend != NULL)
@@ -940,7 +939,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
                 read_batch = j_batch_new(semantics);
                 j_transformation_object_read(object, whole_data_buf, object->original_size, 0,
                         &bytes_read, read_batch);
-                j_batch_execute(read_batch);
+                ret = j_batch_execute(read_batch);
             }
             else
             {
@@ -1198,7 +1197,6 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
 	}
 
 	it = j_list_iterator_new(operations);
-	/* object_backend = j_backend(J_BACKEND_TYPE_OBJECT); */
     object_backend = j_object_get_backend();
 
 	if (object_backend == NULL)
