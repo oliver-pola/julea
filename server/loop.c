@@ -135,9 +135,87 @@ jd_handle_message(JMessage* message, GSocketConnection* connection, JMemoryChunk
 		}
 		break;
         case J_MESSAGE_TRANSFORMATION_OBJECT_READ:
-            {
-            }
-            //Fallthrough
+        {
+			JMessage* reply;
+			gpointer object;
+
+			namespace = j_message_get_string(message);
+			path = j_message_get_string(message);
+
+			reply = j_message_new_reply(message);
+
+			// FIXME return value
+			j_backend_object_open(jd_object_backend, namespace, path, &object);
+
+			for (i = 0; i < operation_count; i++)
+			{
+				gchar* buf;
+				guint64 length;
+				guint64 offset;
+				guint64 bytes_read = 0;
+                guint64 original_size = 0;
+                guint64 transformed_size = 0;
+                JTransformation* transformation;
+
+				length = j_message_get_8(message);
+				offset = j_message_get_8(message);
+                transformation = j_message_get_n(message, sizeof(JTransformation));
+                original_size = j_message_get_8(message);
+                transformed_size = j_message_get_8(message);
+
+				if (length > memory_chunk_size)
+				{
+					// FIXME return proper error
+					j_message_add_operation(reply, sizeof(guint64));
+					j_message_append_8(reply, &bytes_read);
+					continue;
+				}
+
+				buf = j_memory_chunk_get(memory_chunk, length);
+
+				if (buf == NULL)
+				{
+					// FIXME ugly
+					j_message_send(reply, connection);
+					j_message_unref(reply);
+
+					reply = j_message_new_reply(message);
+
+					j_memory_chunk_reset(memory_chunk);
+					buf = j_memory_chunk_get(memory_chunk, length);
+				}
+
+                // TODO
+                if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT)
+                {
+                    j_backend_object_read(jd_object_backend, object, buf, length, offset, &bytes_read);
+                }
+                else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
+                {
+                    j_backend_transformation_object_read(jd_object_backend, object, buf, length, offset, &bytes_read, transformation, &original_size, &transformed_size);
+                }
+
+				j_statistics_add(statistics, J_STATISTICS_BYTES_READ, bytes_read);
+
+				j_message_add_operation(reply, sizeof(guint64));
+				j_message_append_8(reply, &bytes_read);
+
+				if (bytes_read > 0)
+				{
+					j_message_add_send(reply, buf, bytes_read);
+				}
+
+				j_statistics_add(statistics, J_STATISTICS_BYTES_SENT, bytes_read);
+			}
+
+			j_backend_object_close(jd_object_backend, object);
+
+			j_message_send(reply, connection);
+			j_message_unref(reply);
+
+			j_memory_chunk_reset(memory_chunk);
+        }
+        break;
 		case J_MESSAGE_OBJECT_READ:
 		{
 			JMessage* reply;
@@ -206,9 +284,103 @@ jd_handle_message(JMessage* message, GSocketConnection* connection, JMemoryChunk
 		}
 		break;
         case J_MESSAGE_TRANSFORMATION_OBJECT_WRITE:
-            {
-            }
-            //Fallthrough
+        {
+            g_debug("SERVER SIDE WRITE\n");
+			g_autoptr(JMessage) reply = NULL;
+			gpointer object;
+
+			if (safety == J_SEMANTICS_SAFETY_NETWORK || safety == J_SEMANTICS_SAFETY_STORAGE)
+			{
+				reply = j_message_new_reply(message);
+			}
+
+			namespace = j_message_get_string(message);
+			path = j_message_get_string(message);
+
+			// FIXME return value
+			j_backend_object_open(jd_object_backend, namespace, path, &object);
+
+			for (i = 0; i < operation_count; i++)
+			{
+				GInputStream* input;
+				gchar* buf;
+				guint64 length;
+				guint64 offset;
+				guint64 bytes_written = 0;
+                guint64 original_size = 0;
+                guint64 transformed_size = 0;
+                JTransformation* transformation;
+
+				length = j_message_get_8(message);
+				offset = j_message_get_8(message);
+                transformation = j_message_get_n(message, sizeof(JTransformation));
+                original_size = j_message_get_8(message);
+                transformed_size = j_message_get_8(message);
+
+				if (length > memory_chunk_size)
+				{
+					// FIXME return proper error
+					j_message_add_operation(reply, sizeof(guint64));
+					j_message_append_8(reply, &bytes_written);
+					continue;
+				}
+
+				// Guaranteed to work because memory_chunk is reset below
+				buf = j_memory_chunk_get(memory_chunk, length);
+				g_assert(buf != NULL);
+
+				input = g_io_stream_get_input_stream(G_IO_STREAM(connection));
+				g_input_stream_read_all(input, buf, length, NULL, NULL, NULL);
+				j_statistics_add(statistics, J_STATISTICS_BYTES_RECEIVED, length);
+
+                //TODO modify reply
+                if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT)
+                {
+                    j_backend_object_write(jd_object_backend, object, buf, length, offset, &bytes_written);
+                }
+                else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
+                {
+                    j_backend_transformation_object_write(jd_object_backend, object, buf, length, offset, &bytes_written, transformation, &original_size, &transformed_size);
+                }
+
+                j_statistics_add(statistics, J_STATISTICS_BYTES_WRITTEN, bytes_written);
+
+                if (reply != NULL)
+                {
+                    if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT)
+                    {
+                        j_message_add_operation(reply, sizeof(guint64));
+                        j_message_append_8(reply, &bytes_written);
+                    }
+                    else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
+                    {
+                        j_message_add_operation(reply, sizeof(guint64)*3);
+                        j_message_append_8(reply, &bytes_written);
+                        j_message_append_8(reply, &original_size);
+                        j_message_append_8(reply, &transformed_size);
+                        g_debug("HERE: %ld, %ld\n", original_size, transformed_size);
+                    }
+                }
+
+				j_memory_chunk_reset(memory_chunk);
+			}
+
+			if (safety == J_SEMANTICS_SAFETY_STORAGE)
+			{
+				j_backend_object_sync(jd_object_backend, object);
+				j_statistics_add(statistics, J_STATISTICS_SYNC, 1);
+			}
+
+			j_backend_object_close(jd_object_backend, object);
+
+			if (reply != NULL)
+			{
+				j_message_send(reply, connection);
+			}
+
+			j_memory_chunk_reset(memory_chunk);
+        }
+        break;
 		case J_MESSAGE_OBJECT_WRITE:
 		{
 			g_autoptr(JMessage) reply = NULL;

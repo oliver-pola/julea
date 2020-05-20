@@ -29,7 +29,6 @@
 
 #include <glib.h>
 
-#include <transformation/jtransformation.h>
 #include <julea-kv.h>
 #include <julea.h>
 

@@ -25,7 +25,6 @@
 
 #include <transformation/jtransformation-object.h>
 #include <transformation/jchunked-transformation-object.h>
-#include <transformation/jtransformation.h>
 
 #undef JULEA_TRANSFORMATION_H
 

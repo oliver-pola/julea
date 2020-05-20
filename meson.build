@@ -147,7 +147,6 @@ libmongoc_dep = dependency('libmongoc-1.0',
 
 lz4_dep = dependency('liblz4',
     version: '>= @0@'.format(lz4_version),
-    required: false,
 )
 
 rados_dep = cc.find_library('rados',
@@ -295,8 +294,7 @@ configure_file(
 
 # Build
 
-# TODO lz4 dep here?
-common_deps = [m_dep, glib_dep, gio_dep, gmodule_dep, gthread_dep, gobject_dep, libbson_dep]
+common_deps = [m_dep, glib_dep, gio_dep, gmodule_dep, gthread_dep, gobject_dep, libbson_dep, lz4_dep]
 
 # FIXME Remove core directory
 julea_incs = include_directories([
@@ -328,6 +326,7 @@ julea_srcs = files([
 	'lib/core/jsemantics.c',
 	'lib/core/jstatistics.c',
 	'lib/core/jtrace.c',
+	'lib/core/jtransformation.c',
 ])
 
 julea_lib = shared_library('julea', julea_srcs,
@@ -378,7 +377,6 @@ julea_client_srcs = {
     'transformation': files([
         'lib/transformation/jtransformation-object.c',
         'lib/transformation/jchunked-transformation-object.c',
-        'lib/transformation/jtransformation.c',
     ]),
 }
 
@@ -406,7 +404,6 @@ foreach client, srcs: julea_client_srcs
     elif client == 'transformation'
         extra_deps += julea_client_deps['object']
         extra_deps += julea_client_deps['kv']
-        extra_deps += lz4_dep
 	endif
 
 	julea_client_lib = shared_library('julea-@0@'.format(client), julea_client_srcs[client],
@@ -677,6 +674,7 @@ julea_client_hdrs = {
 		'include/core/jsemantics.h',
 		'include/core/jstatistics.h',
 		'include/core/jtrace.h',
+		'include/core/jtransformation.h',
 	]),
 	'db': files([
 		'include/db/jdb-entry.h',
@@ -707,7 +705,6 @@ julea_client_hdrs = {
     'transformation': files([
         'include/transformation/jtransformation-object.h',
         'include/transformation/jchunked-transformation-object.h',
-        'include/transformation/jtransformation.h',
     ]),
 }
 

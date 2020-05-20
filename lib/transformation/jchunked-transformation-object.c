@@ -28,7 +28,6 @@
 
 #include <transformation/jchunked-transformation-object.h>
 #include <transformation/jtransformation-object.h>
-#include <transformation/jtransformation.h>
 #include <julea-object.h>
 #include <julea-kv.h>
 #include <julea.h>

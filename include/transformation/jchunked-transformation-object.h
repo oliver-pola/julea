@@ -29,7 +29,6 @@
 
 #include <glib.h>
 #include <julea.h>
-#include <transformation/jtransformation.h>
 
 G_BEGIN_DECLS
 

@@ -313,6 +313,8 @@ j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
 	while (j_list_iterator_next(it))
 	{
 		JTransformationObject* object = j_list_iterator_get(it);
+        JTransformationObjectMetadata* mdata = NULL;
+        g_autoptr(JBatch) kv_batch = NULL;
 
 		if (object_backend != NULL)
 		{
@@ -330,6 +332,18 @@ j_transformation_object_create_exec (JList* operations, JSemantics* semantics)
 			j_message_add_operation(message, name_len);
 			j_message_append_n(message, object->name, name_len);
 		}
+
+        kv_batch = j_batch_new(semantics);
+
+        mdata = g_new(JTransformationObjectMetadata, 1);
+        mdata->transformation_type = object->transformation->type;
+        mdata->transformation_mode = object->transformation->mode;
+        mdata->original_size = object->original_size;
+        mdata->transformed_size = object->transformed_size;
+
+        j_kv_put(object->metadata, mdata, sizeof(JTransformationObjectMetadata), g_free, kv_batch);
+        ret = j_batch_execute(kv_batch);
+
 	}
 
 	if (object_backend == NULL)
@@ -608,7 +622,8 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 	*/
 
     // Find out if the whole object has to be read to perform the retransformation of the read data 
-    if(j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ))
+    if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT &&
+       j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ))
     {
         while (j_list_iterator_next(it))
         {
@@ -644,9 +659,13 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
             }
             else
             {
-                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64) 
+                        + sizeof(JTransformation) + sizeof(guint64) + sizeof(guint64));
                 j_message_append_8(message, &transformed_length);
                 j_message_append_8(message, &offset);
+                j_message_append_n(message, transformation, sizeof(JTransformation));
+                j_message_append_8(message, &object->original_size);
+                j_message_append_8(message, &object->transformed_size);
             }
 
             j_trace_file_end(object->name, J_TRACE_FILE_READ, transformed_length, offset);
@@ -733,7 +752,8 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
     }
     // In place modification of the object data are possible and the only thing that needs to
     // be done is transforming the data of the read
-    else
+    else if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT &&
+       !j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ))
     {
         while (j_list_iterator_next(it))
         {
@@ -757,9 +777,13 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
             }
             else
             {
-                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64) 
+                        + sizeof(JTransformation) + sizeof(guint64) + sizeof(guint64));
                 j_message_append_8(message, &length);
                 j_message_append_8(message, &offset);
+                j_message_append_n(message, transformation, sizeof(JTransformation));
+                j_message_append_8(message, &object->original_size);
+                j_message_append_8(message, &object->transformed_size);
             }
 
             j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
@@ -823,6 +847,105 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
                         j_transformation_apply(transformation, data, length, offset, &data, &length, &offset,
                                 J_TRANSFORMATION_CALLER_CLIENT_READ);
+                    }
+                }
+
+                operations_done += reply_operation_count;
+            }
+
+            j_list_iterator_free(it);
+
+            j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
+        }
+    }
+    else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
+    {
+        printf("SERVER MODE READ\n");
+        while (j_list_iterator_next(it))
+        {
+            JTransformationObjectOperation* operation = j_list_iterator_get(it);
+            gpointer data = operation->read.data;
+            guint64 length = operation->read.length;
+            guint64 offset = operation->read.offset;
+            guint64* bytes_read = operation->read.bytes_read;
+
+            j_trace_file_begin(object->name, J_TRACE_FILE_READ);
+
+            if (object_backend != NULL)
+            {
+                guint64 nbytes = 0;
+
+                ret = j_backend_transformation_object_read(object_backend, object_handle, data, length, offset, &nbytes, transformation, &object->original_size, &object->transformed_size) && ret;
+                j_helper_atomic_add(bytes_read, nbytes);
+            }
+            else
+            {
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64) 
+                        + sizeof(JTransformation) + sizeof(guint64) + sizeof(guint64));
+                j_message_append_8(message, &length);
+                j_message_append_8(message, &offset);
+                j_message_append_n(message, transformation, sizeof(JTransformation));
+                j_message_append_8(message, &object->original_size);
+                j_message_append_8(message, &object->transformed_size);
+            }
+
+            j_trace_file_end(object->name, J_TRACE_FILE_READ, length, offset);
+        }
+
+
+        j_list_iterator_free(it);
+
+        if (object_backend != NULL)
+        {
+            ret = j_backend_object_close(object_backend, object_handle) && ret;
+        }
+        else
+        {
+            g_autoptr(JMessage) reply = NULL;
+            gpointer object_connection;
+            guint32 operations_done;
+            guint32 operation_count;
+
+            object_connection = j_connection_pool_pop(J_BACKEND_TYPE_OBJECT, object->index);
+            j_message_send(message, object_connection);
+
+            reply = j_message_new_reply(message);
+
+            operations_done = 0;
+            operation_count = j_message_get_count(message);
+
+            it = j_list_iterator_new(operations);
+
+            /**
+             * This extra loop is necessary because the server might send multiple
+             * replies per message. The same reply object can be used to receive
+             * multiple times.
+             */
+            while (operations_done < operation_count)
+            {
+                guint32 reply_operation_count;
+
+                j_message_receive(reply, object_connection);
+
+                reply_operation_count = j_message_get_count(reply);
+
+                for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
+                {
+                    JTransformationObjectOperation* operation = j_list_iterator_get(it);
+                    gpointer data = operation->read.data;
+                    guint64* bytes_read = operation->read.bytes_read;
+
+                    guint64 nbytes;
+
+                    nbytes = j_message_get_8(reply);
+                    j_helper_atomic_add(bytes_read, nbytes);
+
+                    if (nbytes > 0)
+                    {
+                        GInputStream* input;
+
+                        input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
+                        g_input_stream_read_all(input, data, nbytes, NULL, NULL, NULL);
                     }
                 }
 
@@ -916,7 +1039,8 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 	*/
 
     // Find out if the whole object has to be read to perform the write to the transformed data
-    if(j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE))
+    if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT &&
+    j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE))
     {
         while (j_list_iterator_next(it))
         {
@@ -989,9 +1113,13 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             }
             else
             {
-                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64) 
+                        + sizeof(JTransformation) + sizeof(guint64) + sizeof(guint64));
                 j_message_append_8(message, &data_size);
                 j_message_append_8(message, &off);
+                j_message_append_n(message, transformation, sizeof(JTransformation));
+                j_message_append_8(message, &object->original_size);
+                j_message_append_8(message, &object->transformed_size);
                 j_message_add_send(message, transformed_data, data_size);
 
                 // Fake bytes_written here instead of doing another loop further down
@@ -1050,7 +1178,8 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
     }
     // In place modification of the object data are possible and the only thing that needs to
     // be done is transforming the data of the write 
-    else
+    else if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT &&
+            !j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE))
     {
         while (j_list_iterator_next(it))
         {
@@ -1086,9 +1215,13 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             }
             else
             {
-                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64));
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64) 
+                        + sizeof(JTransformation) + sizeof(guint64) + sizeof(guint64));
                 j_message_append_8(message, &length);
                 j_message_append_8(message, &offset);
+                j_message_append_n(message, transformation, sizeof(JTransformation));
+                j_message_append_8(message, &object->original_size);
+                j_message_append_8(message, &object->transformed_size);
                 j_message_add_send(message, data, length);
 
                 // Fake bytes_written here instead of doing another loop further down
@@ -1143,6 +1276,107 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 
                     nbytes = j_message_get_8(reply);
                     j_helper_atomic_add(bytes_written, nbytes);
+                }
+
+                j_list_iterator_free(it);
+            }
+
+            j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
+        }
+    }
+    else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
+    {
+        printf("SERVER MODE WRITE\n");
+        while (j_list_iterator_next(it))
+        {
+            JTransformationObjectOperation* operation = j_list_iterator_get(it);
+            gconstpointer data = operation->write.data;
+            guint64 length = operation->write.length;
+            guint64 offset = operation->write.offset;
+            guint64* bytes_written = operation->write.bytes_written;
+
+            j_transformation_object_load_object_size(object, semantics);
+
+
+            j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
+
+            /*
+            if (lock != NULL)
+            {
+                j_lock_add(lock, block_id);
+            }
+            */
+
+            if (object_backend != NULL)
+            {
+                guint64 nbytes = 0;
+
+                ret = j_backend_transformation_object_write(object_backend, object_handle, data, length, offset, &nbytes, transformation, &object->original_size, &object->transformed_size) && ret;
+                j_helper_atomic_add(bytes_written, nbytes);
+                
+                // TODO update metadata
+            }
+            else
+            {
+                j_message_add_operation(message, sizeof(guint64) + sizeof(guint64) 
+                        + sizeof(JTransformation) + sizeof(guint64) + sizeof(guint64));
+                j_message_append_8(message, &length);
+                j_message_append_8(message, &offset);
+                j_message_append_n(message, transformation, sizeof(JTransformation));
+                j_message_append_8(message, &object->original_size);
+                j_message_append_8(message, &object->transformed_size);
+                j_message_add_send(message, data, length);
+
+                // Fake bytes_written here instead of doing another loop further down
+                if (j_semantics_get(semantics, J_SEMANTICS_SAFETY) == J_SEMANTICS_SAFETY_NONE)
+                {
+                    j_helper_atomic_add(bytes_written, length);
+                }
+            }
+
+            j_trace_file_end(object->name, J_TRACE_FILE_WRITE, length, offset);
+        }
+
+        j_list_iterator_free(it);
+
+        if (object_backend != NULL)
+        {
+            ret = j_backend_object_close(object_backend, object_handle) && ret;
+        }
+        else
+        {
+            JSemanticsSafety safety;
+
+            gpointer object_connection;
+
+            safety = j_semantics_get(semantics, J_SEMANTICS_SAFETY);
+            object_connection = j_connection_pool_pop(J_BACKEND_TYPE_OBJECT, object->index);
+            j_message_send(message, object_connection);
+
+            if (safety == J_SEMANTICS_SAFETY_NETWORK || safety == J_SEMANTICS_SAFETY_STORAGE)
+            {
+                g_autoptr(JMessage) reply = NULL;
+                guint64 nbytes;
+
+                reply = j_message_new_reply(message);
+                j_message_receive(reply, object_connection);
+
+                it = j_list_iterator_new(operations);
+
+                while (j_list_iterator_next(it))
+                {
+                    JTransformationObjectOperation* operation = j_list_iterator_get(it);
+                    guint64* bytes_written = operation->write.bytes_written;
+
+                    nbytes = j_message_get_8(reply);
+                    j_helper_atomic_add(bytes_written, nbytes);
+
+                    printf("before write reply: %ld,%ld\n", object->original_size, object->transformed_size);
+
+                    object->original_size = j_message_get_8(reply);
+                    object->transformed_size = j_message_get_8(reply);
+                    j_transformation_object_update_stored_metadata(object, semantics);
+                    printf("after write reply: %ld,%ld\n", object->original_size, object->transformed_size);
                 }
 
                 j_list_iterator_free(it);
@@ -1453,22 +1687,9 @@ j_transformation_object_create (JTransformationObject* object, JBatch* batch, JT
 
 	g_return_if_fail(object != NULL);
 
-    // Add a metadata entry to the kv-store for this object
-    JSemantics* semantics = NULL;
-    g_autoptr(JBatch) kv_batch = NULL;
-
-    semantics = j_batch_get_semantics(batch);
-    kv_batch = j_batch_new(semantics);
-
-    gpointer mdata = malloc(sizeof(JTransformationObjectMetadata));
-    ((JTransformationObjectMetadata*)mdata)->transformation_type = type;
-    ((JTransformationObjectMetadata*)mdata)->transformation_mode = mode;
-    ((JTransformationObjectMetadata*)mdata)->original_size = 0;
-    ((JTransformationObjectMetadata*)mdata)->transformed_size = 0;
-
-    j_kv_put(object->metadata, mdata, sizeof(JTransformationObjectMetadata), g_free, kv_batch);
-    j_batch_execute(kv_batch);
-
+    object->original_size = 0;
+    object->transformed_size = 0;
+    j_transformation_object_set_transformation(object, type, mode, params);
 
 	operation = j_operation_new();
 	// FIXME key = index + namespace

@@ -20,11 +20,11 @@
  * \file
  **/
 
-#ifndef JULEA_TRANSFORMATION_TRANSFORMATION_H
-#define JULEA_TRANSFORMATION_TRANSFORMATION_H
+#ifndef JULEA_TRANSFORM_H
+#define JULEA_TRANSFORM_H
 
-#if !defined(JULEA_TRANSFORMATION_H) && !defined(JULEA_TRANSFORMATION_COMPILATION)
-#error "Only <julea-transformation.h> can be included directly."
+#if !defined(JULEA_H) && !defined(JULEA_COMPILATION)
+#error "Only <julea.h> can be included directly."
 #endif
 
 #include <glib.h>

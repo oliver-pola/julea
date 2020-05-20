@@ -441,6 +441,83 @@ j_backend_object_read(JBackend* backend, gpointer data, gpointer buffer, guint64
 }
 
 gboolean
+j_backend_transformation_object_read(JBackend* backend, gpointer data, gpointer buffer, guint64 length, guint64 offset, guint64* bytes_read, JTransformation* transformation, 
+        guint64* original_size, guint64* transformed_size)
+{
+    g_debug("backend read: orig: %ld, transformed: %ld, length: %ld, offset: %ld\n", *original_size, *transformed_size, length, offset);
+	J_TRACE_FUNCTION(NULL);
+
+	gboolean ret;
+
+	g_return_val_if_fail(backend != NULL, FALSE);
+	g_return_val_if_fail(backend->type == J_BACKEND_TYPE_OBJECT, FALSE);
+	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(buffer != NULL, FALSE);
+	g_return_val_if_fail(bytes_read != NULL, FALSE);
+	g_return_val_if_fail(transformation != NULL, FALSE);
+	g_return_val_if_fail(original_size != NULL, FALSE);
+	g_return_val_if_fail(transformed_size != NULL, FALSE);
+
+    // TODO fix this hack
+    transformation->mode = J_TRANSFORMATION_MODE_CLIENT;
+
+    if(j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_READ))
+    {
+        gpointer transformed_data = malloc(*transformed_size);
+        gpointer whole_data_buf = NULL;
+        guint64 off = 0;
+        guint64 data_size = 0;
+        guint64 nread = 0;
+        // First read all object data
+		ret = j_backend_object_read(backend, data, transformed_data, *transformed_size, 0, &nread);
+
+        for(guint64 i = 0; i < *transformed_size; i++)
+        {
+            g_debug("%d\n",((gchar*)transformed_data)[i]);
+        }
+
+        g_debug("1\n");
+        
+        j_transformation_apply(transformation, transformed_data, *transformed_size, off,
+                &whole_data_buf, &data_size, &off, J_TRANSFORMATION_CALLER_CLIENT_READ);
+        g_debug("2\n");
+        *bytes_read = nread;
+
+        memcpy(buffer, ((char*)whole_data_buf)+offset, length);
+
+
+        j_transformation_cleanup(transformation, whole_data_buf, data_size, offset, 
+                J_TRANSFORMATION_CALLER_CLIENT_READ);
+
+        g_debug("3\n");
+
+        free(transformed_data);
+    }
+    else
+    {
+        guint64 nread = 0;
+
+        ret = j_backend_object_read(backend, data, buffer, length, offset, &nread);
+        *bytes_read = nread;
+
+
+        j_transformation_apply(transformation, buffer, length, offset, &buffer, &length, 
+                &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
+
+    }
+    transformation->mode = J_TRANSFORMATION_MODE_SERVER;
+
+    g_debug("leaving backend read: orig: %ld, transformed: %ld, length: %ld, offset: %ld\n", *original_size, *transformed_size, length, offset);
+
+	/* { */
+	/* 	J_TRACE("backend_read", "%p, %p, %" G_GUINT64_FORMAT ", %" G_GUINT64_FORMAT ", %p", data, buffer, length, offset, (gpointer)bytes_read); */
+	/* 	ret = backend->object.backend_read(backend->data, data, buffer, length, offset, bytes_read); */
+	/* } */
+
+	return ret;
+}
+
+gboolean
 j_backend_object_write(JBackend* backend, gpointer data, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written)
 {
 	J_TRACE_FUNCTION(NULL);
@@ -457,6 +534,102 @@ j_backend_object_write(JBackend* backend, gpointer data, gconstpointer buffer, g
 		J_TRACE("backend_write", "%p, %p, %" G_GUINT64_FORMAT ", %" G_GUINT64_FORMAT ", %p", data, buffer, length, offset, (gpointer)bytes_written);
 		ret = backend->object.backend_write(backend->data, data, buffer, length, offset, bytes_written);
 	}
+
+	return ret;
+}
+
+gboolean
+j_backend_transformation_object_write(JBackend* backend, gpointer data, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written, JTransformation* transformation, 
+        guint64* original_size, guint64* transformed_size)
+{
+    g_debug("backend write: orig: %ld, transformed: %ld, length: %ld, offset: %ld\n", *original_size, *transformed_size, length, offset);
+	J_TRACE_FUNCTION(NULL);
+
+	gboolean ret;
+
+	g_return_val_if_fail(backend != NULL, FALSE);
+	g_return_val_if_fail(backend->type == J_BACKEND_TYPE_OBJECT, FALSE);
+	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(buffer != NULL, FALSE);
+	g_return_val_if_fail(bytes_written != NULL, FALSE);
+	g_return_val_if_fail(transformation != NULL, FALSE);
+	g_return_val_if_fail(original_size != NULL, FALSE);
+	g_return_val_if_fail(transformed_size != NULL, FALSE);
+    
+    // TODO Fix this hack
+    transformation->mode = J_TRANSFORMATION_MODE_CLIENT;
+
+    if(j_transformation_need_whole_object(transformation, J_TRANSFORMATION_CALLER_CLIENT_WRITE))   
+    {
+        gpointer whole_data_buf = NULL;
+        gpointer transformed_data = NULL;
+        guint64 data_size;
+        guint64 off;
+        guint64 nread = 0;
+
+        if(*original_size != 0)
+        {
+            whole_data_buf = malloc(*original_size);
+            ret = j_backend_transformation_object_read(backend, data, whole_data_buf,
+                    *original_size, 0, &nread, transformation, original_size, transformed_size);
+            transformation->mode = J_TRANSFORMATION_MODE_CLIENT;
+        }
+        else
+        {
+            whole_data_buf = malloc(length);
+        }
+
+        // Write the untransformed data
+        memcpy(((gchar*)whole_data_buf)+offset, buffer, length);
+
+        if(*original_size < offset + length)
+        {
+           *original_size = offset + length; 
+        }
+
+        data_size = *original_size;
+        off = 0;
+
+        for(guint64 i = 0; i < *original_size; i++)
+        {
+            g_debug("%d\n",((gchar*)whole_data_buf)[i]);
+        }
+
+
+        j_transformation_apply(transformation, whole_data_buf, data_size, off,
+                &transformed_data, &data_size, &off, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+
+        for(guint64 i = 0; i < data_size; i++)
+        {
+            g_debug("%d\n",((gchar*)transformed_data)[i]);
+        }
+
+        *transformed_size = data_size;
+
+        ret = j_backend_object_write(backend, data, transformed_data, data_size, 0,
+                (gpointer)bytes_written);
+
+        free(whole_data_buf);
+        j_transformation_cleanup(transformation, transformed_data, data_size, off, 
+                J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+
+    }
+    else
+    {
+
+        j_transformation_apply(transformation, buffer, length, offset, &buffer, &length,
+                &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+
+        ret = j_backend_object_write(backend, data, buffer, length, offset, bytes_written);
+
+    }
+    transformation->mode = J_TRANSFORMATION_MODE_SERVER;
+
+	/* { */
+	/* 	J_TRACE("backend_write", "%p, %p, %" G_GUINT64_FORMAT ", %" G_GUINT64_FORMAT ", %p", data, buffer, length, offset, (gpointer)bytes_written); */
+	/* 	ret = backend->object.backend_write(backend->data, data, buffer, length, offset, bytes_written); */
+	/* } */
+    g_debug("leaving backend write: orig: %ld, transformed: %ld, length: %ld, offset: %ld\n", *original_size, *transformed_size, length, offset);
 
 	return ret;
 }
