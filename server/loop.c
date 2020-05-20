@@ -285,7 +285,6 @@ jd_handle_message(JMessage* message, GSocketConnection* connection, JMemoryChunk
 		break;
         case J_MESSAGE_TRANSFORMATION_OBJECT_WRITE:
         {
-            g_debug("SERVER SIDE WRITE\n");
 			g_autoptr(JMessage) reply = NULL;
 			gpointer object;
 
@@ -358,7 +357,6 @@ jd_handle_message(JMessage* message, GSocketConnection* connection, JMemoryChunk
                         j_message_append_8(reply, &bytes_written);
                         j_message_append_8(reply, &original_size);
                         j_message_append_8(reply, &transformed_size);
-                        g_debug("HERE: %ld, %ld\n", original_size, transformed_size);
                     }
                 }
 

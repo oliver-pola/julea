@@ -178,7 +178,6 @@ static void j_transformation_apply_lz4 (gpointer input, gpointer* output,
     guint64* length)
 {
 /* #ifdef HAVE_LZ4 */
-    g_debug("HALLO\n");
     char* out;
     guint64 max_out_len;
     gint64 lz4_compression_result;
@@ -189,7 +188,6 @@ static void j_transformation_apply_lz4 (gpointer input, gpointer* output,
 
     // Compression
     lz4_compression_result = LZ4_compress_default(input, out, *length, max_out_len);
-    g_debug("lz4:%ld\n", lz4_compression_result);
     g_assert(lz4_compression_result > 0);
 
     // Copy the used part only
@@ -215,9 +213,7 @@ static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output
 
     // Decompression
     lz4_decompression_result = LZ4_decompress_safe(input, out, *length, max_out_len);
-    g_debug("TEST\n");
     g_assert(lz4_decompression_result > 0);
-    g_debug("TEST2\n");
 
     // Copy the used part only
     *output = g_slice_alloc(lz4_decompression_result);

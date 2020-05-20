@@ -860,7 +860,6 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
     }
     else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
     {
-        printf("SERVER MODE READ\n");
         while (j_list_iterator_next(it))
         {
             JTransformationObjectOperation* operation = j_list_iterator_get(it);
@@ -1286,7 +1285,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
     }
     else if(transformation->mode == J_TRANSFORMATION_MODE_SERVER)
     {
-        printf("SERVER MODE WRITE\n");
         while (j_list_iterator_next(it))
         {
             JTransformationObjectOperation* operation = j_list_iterator_get(it);
@@ -1371,12 +1369,9 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
                     nbytes = j_message_get_8(reply);
                     j_helper_atomic_add(bytes_written, nbytes);
 
-                    printf("before write reply: %ld,%ld\n", object->original_size, object->transformed_size);
-
                     object->original_size = j_message_get_8(reply);
                     object->transformed_size = j_message_get_8(reply);
                     j_transformation_object_update_stored_metadata(object, semantics);
-                    printf("after write reply: %ld,%ld\n", object->original_size, object->transformed_size);
                 }
 
                 j_list_iterator_free(it);
