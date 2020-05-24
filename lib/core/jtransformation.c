@@ -207,8 +207,8 @@ static void j_transformation_apply_lz4_inverse (gpointer input, gpointer* output
     guint64 max_out_len;
     gint64 lz4_decompression_result;
 
-    // TODO need to allocate at least the original size
-    max_out_len = 1000; // JUST FOR TESTING!!!!
+    // TODO Estimatedmaximum size of output as good as possible
+    max_out_len = *length * 2 + 5;
     out = g_slice_alloc(max_out_len);
 
     // Decompression

@@ -1326,8 +1326,8 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 
                 ret = j_backend_transformation_object_write(object_backend, object_handle, data, length, offset, &nbytes, transformation, &object->original_size, &object->transformed_size) && ret;
                 j_helper_atomic_add(bytes_written, nbytes);
-                
-                // TODO update metadata
+
+                j_transformation_object_update_stored_metadata(object, semantics);
             }
             else
             {

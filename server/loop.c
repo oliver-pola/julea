@@ -185,7 +185,6 @@ jd_handle_message(JMessage* message, GSocketConnection* connection, JMemoryChunk
 					buf = j_memory_chunk_get(memory_chunk, length);
 				}
 
-                // TODO
                 if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT)
                 {
                     j_backend_object_read(jd_object_backend, object, buf, length, offset, &bytes_read);
@@ -332,7 +331,6 @@ jd_handle_message(JMessage* message, GSocketConnection* connection, JMemoryChunk
 				g_input_stream_read_all(input, buf, length, NULL, NULL, NULL);
 				j_statistics_add(statistics, J_STATISTICS_BYTES_RECEIVED, length);
 
-                //TODO modify reply
                 if(transformation->mode == J_TRANSFORMATION_MODE_CLIENT)
                 {
                     j_backend_object_write(jd_object_backend, object, buf, length, offset, &bytes_written);
