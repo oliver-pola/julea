@@ -66,7 +66,7 @@ struct JTransformationObjectOperation
 		struct
 		{
 			JTransformationObject* object;
-			gconstpointer data;
+			gpointer data;
 			guint64 length;
 			guint64 offset;
 			guint64* bytes_written;
@@ -477,7 +477,7 @@ j_transformation_object_set_transformation(JTransformationObject* object, JTrans
 
 static
 bool
-j_transformation_object_load_transformation(JTransformationObject* object, JSemantics* semantics)
+j_transformation_object_load_transformation(JTransformationObject* object)
 {
     bool ret = false;
 
@@ -493,7 +493,7 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
 
         if(g_strcmp0(key, object->name) == 0)
         {
-            JTransformationObjectMetadata* mdata = (JTransformationObjectMetadata*)value;
+            JTransformationObjectMetadata const* mdata = (JTransformationObjectMetadata const*)value;
             j_transformation_object_set_transformation(object, mdata->transformation_type, 
                     mdata->transformation_mode, NULL);
             object->original_size = mdata->original_size;
@@ -506,7 +506,7 @@ j_transformation_object_load_transformation(JTransformationObject* object, JSema
 
 static
 bool
-j_transformation_object_load_object_size(JTransformationObject* object, JSemantics* semantics)
+j_transformation_object_load_object_size(JTransformationObject* object)
 {
     bool ret = false;
 
@@ -522,7 +522,7 @@ j_transformation_object_load_object_size(JTransformationObject* object, JSemanti
 
         if(g_strcmp0(key, object->name) == 0)
         {
-            JTransformationObjectMetadata* mdata = (JTransformationObjectMetadata*)value;
+            JTransformationObjectMetadata const* mdata = (JTransformationObjectMetadata const*)value;
             object->original_size = mdata->original_size;
             object->transformed_size = mdata->transformed_size;
             ret = true;
@@ -587,7 +587,7 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
         if(transformation == NULL)
         {
-            j_transformation_object_load_transformation(object, semantics);
+            j_transformation_object_load_transformation(object);
             transformation = object->transformation;
             g_assert(transformation != NULL);
         }
@@ -627,26 +627,32 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
     {
         while (j_list_iterator_next(it))
         {
-            j_transformation_object_load_object_size(object, semantics);
-            JTransformationObjectOperation* operation = j_list_iterator_get(it);
-            // Temporary data buffer for all object data
-            gpointer transformed_data = malloc(object->transformed_size);
-            guint64 transformed_length = object->transformed_size;
-            guint64 offset = 0;
-            guint64* bytes_read = operation->read.bytes_read;
+            JTransformationObjectOperation* operation;
+            gpointer transformed_data;
+            guint64 transformed_length;
+            guint64 offset;
+            guint64* bytes_read;
+
+            j_transformation_object_load_object_size(object);
+
+            operation = j_list_iterator_get(it);
+            transformed_length = object->transformed_size;
+            offset = 0;
+            bytes_read = operation->read.bytes_read;
+            transformed_data = malloc(object->transformed_size);
 
             j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
             if (object_backend != NULL)
             {
                 guint64 nbytes = 0;
+                gpointer whole_data_buf = NULL;
+                guint64 data_size = 0;
 
                 ret = j_backend_object_read(object_backend, object_handle, transformed_data,
                         transformed_length, offset, &nbytes) && ret;
                 j_helper_atomic_add(bytes_read, nbytes);
 
-                gpointer whole_data_buf = NULL;
-                guint64 data_size = 0;
 
                 j_transformation_apply(transformation, transformed_data, transformed_length,
                         offset, &whole_data_buf, &data_size, &offset,
@@ -709,14 +715,20 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
 
                 for (guint i = 0; i < reply_operation_count && j_list_iterator_next(it); i++)
                 {
-                    j_transformation_object_load_object_size(object, semantics);
-                    JTransformationObjectOperation* operation = j_list_iterator_get(it);
-                    gpointer transformed_data = malloc(object->transformed_size);
-                    guint64 transformed_length = object->transformed_size;
-                    guint64 offset = 0;
-                    guint64* bytes_read = operation->read.bytes_read;
-
+                    JTransformationObjectOperation* operation;
+                    guint64 transformed_length;
+                    guint64 offset;
                     guint64 nbytes;
+                    guint64* bytes_read;
+                    gpointer transformed_data;
+
+                    j_transformation_object_load_object_size(object);
+
+                    operation = j_list_iterator_get(it);
+                    transformed_length = object->transformed_size;
+                    offset = 0;
+                    bytes_read = operation->read.bytes_read;
+                    transformed_data = malloc(object->transformed_size);
 
                     nbytes = j_message_get_8(reply);
                     j_helper_atomic_add(bytes_read, nbytes);
@@ -724,12 +736,11 @@ j_transformation_object_read_exec (JList* operations, JSemantics* semantics)
                     if (nbytes > 0)
                     {
                         GInputStream* input;
+                        gpointer whole_data_buf = NULL;
+                        guint64 data_size = 0;
 
                         input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
                         g_input_stream_read_all(input, transformed_data, nbytes, NULL, NULL, NULL);
-
-                        gpointer whole_data_buf = NULL;
-                        guint64 data_size = 0;
 
                         j_transformation_apply(transformation, transformed_data, transformed_length,
                                 offset, &whole_data_buf, &data_size, &offset,
@@ -1003,7 +1014,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 		
         if(transformation == NULL)
         {
-            j_transformation_object_load_transformation(object, semantics);
+            j_transformation_object_load_transformation(object);
             transformation = object->transformation;
             g_assert(transformation != NULL);
         }
@@ -1048,18 +1059,22 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             guint64 write_length = operation->write.length;
             guint64 write_offset = operation->write.offset;
             guint64* bytes_written = operation->write.bytes_written;
+            guint64 data_size;
+            guint64 off;
             gpointer whole_data_buf = NULL;
+            gpointer transformed_data = NULL;
 
-            j_transformation_object_load_object_size(object, semantics);
+            j_transformation_object_load_object_size(object);
 
             //If the object is not empty we need to read all of the transformed data
             if(object->original_size != 0)
             {
-                whole_data_buf = malloc(object->original_size);
                 g_autoptr(JBatch) read_batch = NULL;
                 guint64 bytes_read = 0;
 
+                whole_data_buf = malloc(object->original_size);
                 read_batch = j_batch_new(semantics);
+
                 j_transformation_object_read(object, whole_data_buf, object->original_size, 0,
                         &bytes_read, read_batch);
                 ret = j_batch_execute(read_batch);
@@ -1087,9 +1102,9 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
                 object->original_size = write_offset + write_length;
             }
 
-            gpointer transformed_data = NULL;
-            guint64 data_size = object->original_size;
-            guint64 off = 0;
+            transformed_data = NULL;
+            data_size = object->original_size;
+            off = 0;
 
             // Modify the data buffer by applying the transformation
             j_transformation_apply(transformation, whole_data_buf, data_size, off,
@@ -1183,7 +1198,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         while (j_list_iterator_next(it))
         {
             JTransformationObjectOperation* operation = j_list_iterator_get(it);
-            gconstpointer data = operation->write.data;
+            gpointer data = operation->write.data;
             guint64 length = operation->write.length;
             guint64 offset = operation->write.offset;
             guint64* bytes_written = operation->write.bytes_written;
@@ -1231,7 +1246,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             }
 
             // If neccessary update original_size and transformed_size
-            j_transformation_object_load_object_size(object, semantics);
+            j_transformation_object_load_object_size(object);
             if( offset + length > object->original_size)
             {
                 object->original_size = offset + length;
@@ -1288,12 +1303,12 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         while (j_list_iterator_next(it))
         {
             JTransformationObjectOperation* operation = j_list_iterator_get(it);
-            gconstpointer data = operation->write.data;
+            gpointer data = operation->write.data;
             guint64 length = operation->write.length;
             guint64 offset = operation->write.offset;
             guint64* bytes_written = operation->write.bytes_written;
 
-            j_transformation_object_load_object_size(object, semantics);
+            j_transformation_object_load_object_size(object);
 
 
             j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
@@ -1484,13 +1499,11 @@ j_transformation_object_status_exec (JList* operations, JSemantics* semantics)
             guint64* transformed_size = operation->status.transformed_size;
             JTransformationType* transformation_type = operation->status.transformation_type;
 			gint64 modification_time_;
-			guint64 size_;
 
 			modification_time_ = j_message_get_8(reply);
-			size_ = j_message_get_8(reply);
 
             // Update the object from the kv-store metadata
-            j_transformation_object_load_transformation(operation->status.object, semantics);
+            j_transformation_object_load_transformation(operation->status.object);
 
 			if (modification_time != NULL)
 			{
@@ -1805,7 +1818,7 @@ j_transformation_object_read (JTransformationObject* object, gpointer data, guin
  * \param batch         A batch.
  **/
 void
-j_transformation_object_write (JTransformationObject* object, gconstpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
+j_transformation_object_write (JTransformationObject* object, gpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -1842,7 +1855,7 @@ j_transformation_object_write (JTransformationObject* object, gconstpointer data
 
 		j_batch_add(batch, operation);
 
-		data = (gchar const*)data + chunk_size;
+		data = (gchar*)data + chunk_size;
 		length -= chunk_size;
 		offset += chunk_size;
 	}

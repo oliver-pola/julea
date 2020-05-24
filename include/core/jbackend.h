@@ -401,7 +401,7 @@ gboolean j_backend_object_read(JBackend*, gpointer, gpointer, guint64, guint64, 
 gboolean j_backend_object_write(JBackend*, gpointer, gconstpointer, guint64, guint64, guint64*);
 
 gboolean j_backend_transformation_object_read(JBackend*, gpointer, gpointer, guint64, guint64, guint64*, JTransformation*, guint64*, guint64*);
-gboolean j_backend_transformation_object_write(JBackend*, gpointer, gconstpointer, guint64, guint64, guint64*, JTransformation*, guint64*, guint64*);
+gboolean j_backend_transformation_object_write(JBackend*, gpointer, gpointer, guint64, guint64, guint64*, JTransformation*, guint64*, guint64*);
 
 gboolean j_backend_kv_init(JBackend*, gchar const*);
 void j_backend_kv_fini(JBackend*);

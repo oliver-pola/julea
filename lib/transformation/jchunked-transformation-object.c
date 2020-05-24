@@ -69,7 +69,7 @@ struct JChunkedTransformationObjectOperation
 		struct
 		{
 			JChunkedTransformationObject* object;
-			gconstpointer data;
+			gpointer data;
 			guint64 length;
 			guint64 offset;
 			guint64* bytes_written;
@@ -247,7 +247,7 @@ j_chunked_transformation_object_load_metadata(JChunkedTransformationObject* obje
 
         if(g_strcmp0(key, object->name) == 0)
         {
-            JChunkedTransformationObjectMetadata* mdata = (JChunkedTransformationObjectMetadata*)value;
+            JChunkedTransformationObjectMetadata const* mdata = (JChunkedTransformationObjectMetadata const*)value;
             object->transformation_type = mdata->transformation_type;
             object->transformation_mode = mdata->transformation_mode;
             object->chunk_count = mdata->chunk_count;
@@ -373,23 +373,28 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
 	{
         JChunkedTransformationObjectOperation* op = j_list_iterator_get(it);
         JChunkedTransformationObject* object = op->read.object;
-
-        j_chunked_transformation_object_load_metadata(object);
-
         gchar* data = op->read.data;
         guint64 length = op->read.length;
         guint64 offset = op->read.offset;
-        guint64 chunk_size = object->chunk_size;
-        guint64 local_bytes_read[(length/chunk_size)+2];
+        guint64 chunk_size;
+        guint64* local_bytes_read;
         guint64 counter = 0;
+        g_autoptr(JBatch) batch = NULL;
 
-        g_autoptr(JBatch) batch = j_batch_new(semantics);
+        j_chunked_transformation_object_load_metadata(object);
+
+        chunk_size = object->chunk_size;
+        local_bytes_read = g_slice_alloc0(((length/chunk_size)+2) * sizeof(guint64));
+
+        batch = j_batch_new(semantics);
 
         while(length > 0)
         {
             guint64 chunk_id = offset / chunk_size;
             guint64 local_offset = offset % chunk_size;
             guint64 local_length = chunk_size - local_offset;
+            g_autofree gchar* chunk_name = NULL;
+            g_autoptr(JTransformationObject) chunk_object = NULL;
 
             if(local_length > length)
             {
@@ -401,9 +406,8 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
                 break;
             }
 
-            g_autofree gchar* chunk_name = g_strdup_printf("%s_%ld", object->name, chunk_id);
-            g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new(
-                    object->namespace, chunk_name);
+            chunk_name = g_strdup_printf("%s_%ld", object->name, chunk_id);
+            chunk_object = j_transformation_object_new(object->namespace, chunk_name);
 
             j_transformation_object_read(chunk_object, data, local_length, local_offset,
                     &local_bytes_read[counter], batch);
@@ -420,6 +424,8 @@ j_chunked_transformation_object_read_exec (JList* operations, JSemantics* semant
         {
             *(op->read.bytes_read) += local_bytes_read[i];
         }
+
+        g_slice_free1(((length/chunk_size)+2)*sizeof(guint64), local_bytes_read);
     }
 
     return ret;
@@ -444,23 +450,28 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
 	{
         JChunkedTransformationObjectOperation* op = j_list_iterator_get(it);
         JChunkedTransformationObject* object = op->write.object;
-
-        j_chunked_transformation_object_load_metadata(object);
-
         gchar* data = op->write.data;
         guint64 length = op->write.length;
         guint64 offset = op->write.offset;
-        guint64 chunk_size = object->chunk_size;
-        guint64 local_bytes_written[(length/chunk_size)+2];
+        guint64 chunk_size;
+        guint64* local_bytes_written;
         guint64 counter = 0;
+        g_autoptr(JBatch) batch = NULL;
+        g_autoptr(JTransformationObject) chunk_object = NULL;
 
-        g_autoptr(JBatch) batch = j_batch_new(semantics);
+        j_chunked_transformation_object_load_metadata(object);
+
+        chunk_size = object->chunk_size;
+        local_bytes_written = g_slice_alloc0(((length/chunk_size)+2)*sizeof(guint64));
+
+        batch = j_batch_new(semantics);
 
         while(length > 0)
         {
             guint64 chunk_id = offset / chunk_size;
             guint64 local_offset = offset % chunk_size;
             guint64 local_length = chunk_size - local_offset;
+            g_autofree gchar* chunk_name = NULL;
 
 
             if(local_length > length)
@@ -468,9 +479,8 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
                 local_length = length;
             }
 
-            g_autofree gchar* chunk_name = g_strdup_printf("%s_%ld", object->name, chunk_id);
-            g_autoptr(JTransformationObject) chunk_object = j_transformation_object_new(
-                    object->namespace, chunk_name);
+            chunk_name = g_strdup_printf("%s_%ld", object->name, chunk_id);
+            chunk_object = j_transformation_object_new(object->namespace, chunk_name);
 
             if(chunk_id > (object->chunk_count-1))
             {
@@ -496,6 +506,8 @@ j_chunked_transformation_object_write_exec (JList* operations, JSemantics* seman
         }
 
         j_chunked_transformation_object_store_metadata(object, semantics);
+
+        g_slice_free1(((length/chunk_size)+2)*sizeof(guint64), local_bytes_written);
     }
 
     return ret;
@@ -521,13 +533,18 @@ j_chunked_transformation_object_status_exec (JList* operations, JSemantics* sema
 	{
         JChunkedTransformationObjectOperation* op = j_list_iterator_get(it);
         JChunkedTransformationObject* object = op->status.object;
+        gint64* local_mod_time = NULL;
+        guint64* local_original_size = NULL;
+        guint64* local_transformed_size = NULL;
+        g_autoptr(JBatch) batch = NULL;
 
         j_chunked_transformation_object_load_metadata(object);
 
-        gint64 local_mod_time[object->chunk_count];
-        guint64 local_original_size[object->chunk_count];
-        guint64 local_transformed_size[object->chunk_count];
-        g_autoptr(JBatch) batch = j_batch_new(semantics);
+        local_mod_time = g_slice_alloc0(object->chunk_count*sizeof(gint64));
+        local_original_size = g_slice_alloc0(object->chunk_count*sizeof(guint64));
+        local_transformed_size = g_slice_alloc0(object->chunk_count*sizeof(guint64));
+
+        batch = j_batch_new(semantics);
 
         for(guint64 i = 0; i < object->chunk_count; i++)
         {
@@ -572,6 +589,10 @@ j_chunked_transformation_object_status_exec (JList* operations, JSemantics* sema
                 *(op->status.chunk_size) = object->chunk_size;
             }
         }
+
+        g_slice_free1(object->chunk_count*sizeof(gint64), local_mod_time);
+        g_slice_free1(object->chunk_count*sizeof(guint64), local_original_size);
+        g_slice_free1(object->chunk_count*sizeof(guint64), local_transformed_size);
     }
 
     return ret;
@@ -731,6 +752,7 @@ j_chunked_transformation_object_unref (JChunkedTransformationObject* object)
  *
  * \return A new object. Should be freed with j_chunked_transformation_object_unref().
  **/
+// TODO params
 void
 j_chunked_transformation_object_create (JChunkedTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, guint64 chunk_size, void* params)
 {
@@ -848,7 +870,7 @@ j_chunked_transformation_object_read (JChunkedTransformationObject* object, gpoi
  * \param batch         A batch.
  **/
 void
-j_chunked_transformation_object_write (JChunkedTransformationObject* object, gconstpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
+j_chunked_transformation_object_write (JChunkedTransformationObject* object, gpointer data, guint64 length, guint64 offset, guint64* bytes_written, JBatch* batch)
 {
     J_TRACE_FUNCTION(NULL);
 

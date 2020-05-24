@@ -49,7 +49,7 @@ void j_chunked_transformation_object_create (JChunkedTransformationObject*, JBat
 void j_chunked_transformation_object_delete (JChunkedTransformationObject*, JBatch*);
 
 void j_chunked_transformation_object_read (JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
-void j_chunked_transformation_object_write (JChunkedTransformationObject*, gconstpointer, guint64, guint64, guint64*, JBatch*);
+void j_chunked_transformation_object_write (JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
 
 void j_chunked_transformation_object_status (JChunkedTransformationObject*, gint64*, guint64*, JBatch*);
 void j_chunked_transformation_object_status_ext (JChunkedTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, guint64*, guint64*, JBatch*);

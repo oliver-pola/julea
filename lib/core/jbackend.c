@@ -520,7 +520,7 @@ j_backend_object_write(JBackend* backend, gpointer data, gconstpointer buffer, g
 }
 
 gboolean
-j_backend_transformation_object_write(JBackend* backend, gpointer data, gconstpointer buffer, guint64 length, guint64 offset, guint64* bytes_written, JTransformation* transformation, 
+j_backend_transformation_object_write(JBackend* backend, gpointer data, gpointer buffer, guint64 length, guint64 offset, guint64* bytes_written, JTransformation* transformation, 
         guint64* original_size, guint64* transformed_size)
 {
 	J_TRACE_FUNCTION(NULL);

@@ -53,7 +53,7 @@ void j_transformation_object_create (JTransformationObject*, JBatch*, JTransform
 void j_transformation_object_delete (JTransformationObject*, JBatch*);
 
 void j_transformation_object_read (JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
-void j_transformation_object_write (JTransformationObject*, gconstpointer, guint64, guint64, guint64*, JBatch*);
+void j_transformation_object_write (JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
 
 void j_transformation_object_status (JTransformationObject*, gint64*, guint64*, JBatch*);
 void j_transformation_object_status_ext (JTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, JBatch*);
