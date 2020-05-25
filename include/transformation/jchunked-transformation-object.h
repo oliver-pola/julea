@@ -36,23 +36,23 @@ struct JChunkedTransformationObject;
 
 typedef struct JChunkedTransformationObject JChunkedTransformationObject;
 
-JChunkedTransformationObject* j_chunked_transformation_object_new (gchar const*, gchar const*);
+JChunkedTransformationObject* j_chunked_transformation_object_new(gchar const*, gchar const*);
 
-JChunkedTransformationObject* j_chunked_transformation_object_new_for_index (guint32, gchar const*, gchar const*);
-JChunkedTransformationObject* j_chunked_transformation_object_ref (JChunkedTransformationObject*);
+JChunkedTransformationObject* j_chunked_transformation_object_new_for_index(guint32, gchar const*, gchar const*);
+JChunkedTransformationObject* j_chunked_transformation_object_ref(JChunkedTransformationObject*);
 
-void j_chunked_transformation_object_unref (JChunkedTransformationObject*);
+void j_chunked_transformation_object_unref(JChunkedTransformationObject*);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JChunkedTransformationObject, j_chunked_transformation_object_unref)
 
-void j_chunked_transformation_object_create (JChunkedTransformationObject*, JBatch*, JTransformationType, JTransformationMode, guint64, void*);
-void j_chunked_transformation_object_delete (JChunkedTransformationObject*, JBatch*);
+void j_chunked_transformation_object_create(JChunkedTransformationObject*, JBatch*, JTransformationType, JTransformationMode, guint64, void*);
+void j_chunked_transformation_object_delete(JChunkedTransformationObject*, JBatch*);
 
-void j_chunked_transformation_object_read (JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
-void j_chunked_transformation_object_write (JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
+void j_chunked_transformation_object_read(JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
+void j_chunked_transformation_object_write(JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
 
-void j_chunked_transformation_object_status (JChunkedTransformationObject*, gint64*, guint64*, JBatch*);
-void j_chunked_transformation_object_status_ext (JChunkedTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, guint64*, guint64*, JBatch*);
+void j_chunked_transformation_object_status(JChunkedTransformationObject*, gint64*, guint64*, JBatch*);
+void j_chunked_transformation_object_status_ext(JChunkedTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, guint64*, guint64*, JBatch*);
 
 G_END_DECLS
 

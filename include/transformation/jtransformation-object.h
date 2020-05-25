@@ -40,23 +40,23 @@ struct JTransformationObject;
 
 typedef struct JTransformationObject JTransformationObject;
 
-JTransformationObject* j_transformation_object_new (gchar const*, gchar const*);
+JTransformationObject* j_transformation_object_new(gchar const*, gchar const*);
 
-JTransformationObject* j_transformation_object_new_for_index (guint32, gchar const*, gchar const*);
-JTransformationObject* j_transformation_object_ref (JTransformationObject*);
+JTransformationObject* j_transformation_object_new_for_index(guint32, gchar const*, gchar const*);
+JTransformationObject* j_transformation_object_ref(JTransformationObject*);
 
-void j_transformation_object_unref (JTransformationObject*);
+void j_transformation_object_unref(JTransformationObject*);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformationObject, j_transformation_object_unref)
 
-void j_transformation_object_create (JTransformationObject*, JBatch*, JTransformationType, JTransformationMode, void*);
-void j_transformation_object_delete (JTransformationObject*, JBatch*);
+void j_transformation_object_create(JTransformationObject*, JBatch*, JTransformationType, JTransformationMode, void*);
+void j_transformation_object_delete(JTransformationObject*, JBatch*);
 
-void j_transformation_object_read (JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
-void j_transformation_object_write (JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
+void j_transformation_object_read(JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
+void j_transformation_object_write(JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);
 
-void j_transformation_object_status (JTransformationObject*, gint64*, guint64*, JBatch*);
-void j_transformation_object_status_ext (JTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, JBatch*);
+void j_transformation_object_status(JTransformationObject*, gint64*, guint64*, JBatch*);
+void j_transformation_object_status_ext(JTransformationObject*, gint64*, guint64*, guint64*, JTransformationType*, JBatch*);
 
 G_END_DECLS
 

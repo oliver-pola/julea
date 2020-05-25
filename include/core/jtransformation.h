@@ -33,35 +33,35 @@ G_BEGIN_DECLS
 
 enum JTransformationType
 {
-    J_TRANSFORMATION_TYPE_NONE,
-    J_TRANSFORMATION_TYPE_XOR,
-    J_TRANSFORMATION_TYPE_RLE,
-    J_TRANSFORMATION_TYPE_LZ4,
+	J_TRANSFORMATION_TYPE_NONE,
+	J_TRANSFORMATION_TYPE_XOR,
+	J_TRANSFORMATION_TYPE_RLE,
+	J_TRANSFORMATION_TYPE_LZ4,
 };
 
 typedef enum JTransformationType JTransformationType;
 
 enum JTransformationMode
 {
-    // Client encodes on write, decodes on read
-    J_TRANSFORMATION_MODE_CLIENT,
+	// Client encodes on write, decodes on read
+	J_TRANSFORMATION_MODE_CLIENT,
 
-    // Client encodes, server decodes on write
-    // Server encodes, client decodes on read
-    J_TRANSFORMATION_MODE_TRANSPORT,
+	// Client encodes, server decodes on write
+	// Server encodes, client decodes on read
+	J_TRANSFORMATION_MODE_TRANSPORT,
 
-    // Server encodes on write, decodes on read
-    J_TRANSFORMATION_MODE_SERVER,
+	// Server encodes on write, decodes on read
+	J_TRANSFORMATION_MODE_SERVER,
 };
 
 typedef enum JTransformationMode JTransformationMode;
 
 enum JTransformationCaller
 {
-    J_TRANSFORMATION_CALLER_CLIENT_READ,
-    J_TRANSFORMATION_CALLER_CLIENT_WRITE,
-    J_TRANSFORMATION_CALLER_SERVER_READ,
-    J_TRANSFORMATION_CALLER_SERVER_WRITE,
+	J_TRANSFORMATION_CALLER_CLIENT_READ,
+	J_TRANSFORMATION_CALLER_CLIENT_WRITE,
+	J_TRANSFORMATION_CALLER_SERVER_READ,
+	J_TRANSFORMATION_CALLER_SERVER_WRITE,
 };
 
 typedef enum JTransformationCaller JTransformationCaller;
@@ -71,39 +71,39 @@ typedef enum JTransformationCaller JTransformationCaller;
  **/
 struct JTransformation
 {
-    /**
+	/**
 	 * Which transformation to apply.
 	 **/
-    JTransformationType type;
+	JTransformationType type;
 
-    /**
+	/**
 	 * Whether client or server applies transformation.
 	 **/
-    JTransformationMode mode;
+	JTransformationMode mode;
 
-    /**
+	/**
 	 * Whether parts of data can be read or written without knowing the neighbourhood.
 	 **/
 	gboolean partial_access;
 
-    /**
+	/**
 	 * The reference count.
 	 **/
 	gint ref_count;
 };
 typedef struct JTransformation JTransformation;
 
-JTransformation* j_transformation_new (JTransformationType, JTransformationMode, void*);
-JTransformation* j_transformation_ref (JTransformation*);
-void j_transformation_unref (JTransformation*);
+JTransformation* j_transformation_new(JTransformationType, JTransformationMode, void*);
+JTransformation* j_transformation_ref(JTransformation*);
+void j_transformation_unref(JTransformation*);
 
-void j_transformation_apply (JTransformation*, gpointer, guint64, guint64,
-    gpointer*, guint64*, guint64*, JTransformationCaller);
-void j_transformation_cleanup (JTransformation*, gpointer, guint64, guint64,
-    JTransformationCaller);
+void j_transformation_apply(JTransformation*, gpointer, guint64, guint64,
+			    gpointer*, guint64*, guint64*, JTransformationCaller);
+void j_transformation_cleanup(JTransformation*, gpointer, guint64, guint64,
+			      JTransformationCaller);
 JTransformationMode j_transformation_get_mode(JTransformation*);
 JTransformationType j_transformation_get_type(JTransformation*);
-gboolean j_transformation_need_whole_object (JTransformation*, JTransformationCaller);
+gboolean j_transformation_need_whole_object(JTransformation*, JTransformationCaller);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformation, j_transformation_unref)
 
