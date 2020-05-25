@@ -1061,6 +1061,7 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             guint64* bytes_written = operation->write.bytes_written;
             guint64 data_size;
             guint64 off;
+            guint64 new_size = 0;
             gpointer whole_data_buf = NULL;
             gpointer transformed_data = NULL;
 
@@ -1072,7 +1073,16 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
                 g_autoptr(JBatch) read_batch = NULL;
                 guint64 bytes_read = 0;
 
-                whole_data_buf = malloc(object->original_size);
+                if(object->original_size < write_offset + write_length)
+                {
+                    new_size = write_offset + write_length;
+                }
+                else
+                {
+                    new_size = object->original_size;
+                }
+
+                whole_data_buf = malloc(new_size);
                 read_batch = j_batch_new(semantics);
 
                 j_transformation_object_read(object, whole_data_buf, object->original_size, 0,
@@ -1081,8 +1091,11 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             }
             else
             {
-                whole_data_buf = malloc(write_length);
+                new_size = write_length;
+                whole_data_buf = malloc(new_size);
             }
+
+            object->original_size = new_size;
 
             j_trace_file_begin(object->name, J_TRACE_FILE_WRITE);
 
@@ -1095,12 +1108,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
 
             // Do the write to the untransformed data
             memcpy(((gchar*)whole_data_buf)+write_offset, write_data, write_length);
-
-            // The new untransformed size of the object is now known and can be updated
-            if(object->original_size < write_offset + write_length)
-            {
-                object->original_size = write_offset + write_length;
-            }
 
             transformed_data = NULL;
             data_size = object->original_size;
@@ -1188,7 +1195,6 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
         }
 
 
-
     }
     // In place modification of the object data are possible and the only thing that needs to
     // be done is transforming the data of the write 
@@ -1213,8 +1219,8 @@ j_transformation_object_write_exec (JList* operations, JSemantics* semantics)
             */
 
             // Modify the data buffer by applying the transformation
-            j_transformation_apply(transformation, data, length, offset, &data, &length, &offset, 
-                    J_TRANSFORMATION_CALLER_CLIENT_WRITE);
+            j_transformation_apply(transformation, data, length, offset, &data, &length,
+                    &offset, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
             // Store a pointer to the newly created buffer from jtransformation_apply in the operation
             // so that it can be freed in _write_free
             operation->write.data = data;

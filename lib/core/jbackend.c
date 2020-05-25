@@ -485,14 +485,17 @@ j_backend_transformation_object_read(JBackend* backend, gpointer data, gpointer 
     else
     {
         guint64 nread = 0;
-
+        gpointer original_data = NULL;
         ret = j_backend_object_read(backend, data, buffer, length, offset, &nread);
         *bytes_read = nread;
 
-
-        j_transformation_apply(transformation, buffer, length, offset, &buffer, &length, 
+        j_transformation_apply(transformation, buffer, length, offset, &original_data, &length, 
                 &offset, J_TRANSFORMATION_CALLER_SERVER_READ);
 
+        memcpy(buffer, (gchar*)original_data, length);
+
+        j_transformation_cleanup(transformation, original_data, length, offset, 
+                J_TRANSFORMATION_CALLER_SERVER_READ);
     }
 
 	return ret;
@@ -542,18 +545,31 @@ j_backend_transformation_object_write(JBackend* backend, gpointer data, gpointer
         gpointer transformed_data = NULL;
         guint64 data_size;
         guint64 off;
+        guint64 new_size;
         guint64 nread = 0;
 
         if(*original_size != 0)
         {
-            whole_data_buf = malloc(*original_size);
+            if(*original_size < offset + length)
+            {
+                new_size = offset + length;
+            }
+            else
+            {
+                new_size = *original_size;
+            }
+
+            whole_data_buf = malloc(new_size);
             ret = j_backend_transformation_object_read(backend, data, whole_data_buf,
                     *original_size, 0, &nread, transformation, original_size, transformed_size);
         }
         else
         {
-            whole_data_buf = malloc(length);
+            new_size = length;
+            whole_data_buf = malloc(new_size);
         }
+
+        *original_size = new_size;
 
         // Write the untransformed data
         memcpy(((gchar*)whole_data_buf)+offset, buffer, length);
@@ -581,12 +597,16 @@ j_backend_transformation_object_write(JBackend* backend, gpointer data, gpointer
     }
     else
     {
-
         j_transformation_apply(transformation, buffer, length, offset, &buffer, &length,
                 &offset, J_TRANSFORMATION_CALLER_SERVER_WRITE);
 
         ret = j_backend_object_write(backend, data, buffer, length, offset, bytes_written);
 
+        if(*original_size < offset + length)
+        {
+            *original_size = offset + length;
+            *transformed_size = *original_size;
+        }
     }
 
 	return ret;
