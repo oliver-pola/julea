@@ -49,7 +49,7 @@ void j_transformation_object_unref(JTransformationObject*);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JTransformationObject, j_transformation_object_unref)
 
-void j_transformation_object_create(JTransformationObject*, JBatch*, JTransformationType, JTransformationMode, void*);
+void j_transformation_object_create(JTransformationObject*, JBatch*, JTransformationType, JTransformationMode);
 void j_transformation_object_delete(JTransformationObject*, JBatch*);
 
 void j_transformation_object_read(JTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);

@@ -456,9 +456,9 @@ j_transformation_object_delete_exec(JList* operations, JSemantics* semantics)
 }
 
 static void
-j_transformation_object_set_transformation(JTransformationObject* object, JTransformationType type, JTransformationMode mode, void* params)
+j_transformation_object_set_transformation(JTransformationObject* object, JTransformationType type, JTransformationMode mode)
 {
-	object->transformation = j_transformation_new(type, mode, params);
+	object->transformation = j_transformation_new(type, mode);
 }
 
 static bool
@@ -480,7 +480,7 @@ j_transformation_object_load_transformation(JTransformationObject* object)
 		{
 			JTransformationObjectMetadata const* mdata = (JTransformationObjectMetadata const*)value;
 			j_transformation_object_set_transformation(object, mdata->transformation_type,
-								   mdata->transformation_mode, NULL);
+								   mdata->transformation_mode);
 			object->original_size = mdata->original_size;
 			object->transformed_size = mdata->transformed_size;
 			ret = true;
@@ -1656,12 +1656,11 @@ j_transformation_object_unref(JTransformationObject* object)
  * \param batch A batch
  * \param type The transformation type
  * \param mode The transformation mode
- * \param params Optional parameters for the transformation
  *
  * \return A new object. Should be freed with j_transformation_object_unref().
  **/
 void
-j_transformation_object_create(JTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, void* params)
+j_transformation_object_create(JTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode)
 {
 	J_TRACE_FUNCTION(NULL);
 
@@ -1671,7 +1670,7 @@ j_transformation_object_create(JTransformationObject* object, JBatch* batch, JTr
 
 	object->original_size = 0;
 	object->transformed_size = 0;
-	j_transformation_object_set_transformation(object, type, mode, params);
+	j_transformation_object_set_transformation(object, type, mode);
 
 	operation = j_operation_new();
 	// FIXME key = index + namespace

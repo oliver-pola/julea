@@ -45,7 +45,7 @@ void j_chunked_transformation_object_unref(JChunkedTransformationObject*);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(JChunkedTransformationObject, j_chunked_transformation_object_unref)
 
-void j_chunked_transformation_object_create(JChunkedTransformationObject*, JBatch*, JTransformationType, JTransformationMode, guint64, void*);
+void j_chunked_transformation_object_create(JChunkedTransformationObject*, JBatch*, JTransformationType, JTransformationMode, guint64);
 void j_chunked_transformation_object_delete(JChunkedTransformationObject*, JBatch*);
 
 void j_chunked_transformation_object_read(JChunkedTransformationObject*, gpointer, guint64, guint64, guint64*, JBatch*);

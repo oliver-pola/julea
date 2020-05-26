@@ -93,7 +93,7 @@ struct JTransformation
 };
 typedef struct JTransformation JTransformation;
 
-JTransformation* j_transformation_new(JTransformationType, JTransformationMode, void*);
+JTransformation* j_transformation_new(JTransformationType, JTransformationMode);
 JTransformation* j_transformation_ref(JTransformation*);
 void j_transformation_unref(JTransformation*);
 

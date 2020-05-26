@@ -279,15 +279,13 @@ j_transformation_inverse(JTransformation* trafo,
 }
 
 /**
- * Get a JTransformation object from type (and params)
+ * Get a JTransformation object from type 
  **/
 JTransformation*
 j_transformation_new(JTransformationType type,
-		     JTransformationMode mode, void* params)
+		     JTransformationMode mode)
 {
 	JTransformation* trafo;
-
-	(void)params; // unused
 
 	trafo = g_slice_new(JTransformation);
 

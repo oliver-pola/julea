@@ -277,7 +277,7 @@ j_chunked_transformation_object_create_exec(JList* operations, JSemantics* seman
 		transformation_object = j_transformation_object_new(object->namespace, chunk_name);
 
 		j_transformation_object_create(transformation_object, batch, object->transformation_type,
-					       object->transformation_mode, NULL);
+					       object->transformation_mode);
 
 		created = j_batch_execute(batch);
 
@@ -467,7 +467,7 @@ j_chunked_transformation_object_write_exec(JList* operations, JSemantics* semant
 			if (chunk_id > (object->chunk_count - 1))
 			{
 				j_transformation_object_create(chunk_object, batch, object->transformation_type,
-							       object->transformation_mode, NULL);
+							       object->transformation_mode);
 				object->chunk_count += 1;
 			}
 
@@ -724,13 +724,11 @@ j_chunked_transformation_object_unref(JChunkedTransformationObject* object)
  * \param type The transformation type
  * \param mode The transformation mode
  * \param chunk_size The maximum chunk size for each chunk
- * \param params Optional parameters for the transformation
  *
  * \return A new object. Should be freed with j_chunked_transformation_object_unref().
  **/
-// TODO params
 void
-j_chunked_transformation_object_create(JChunkedTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, guint64 chunk_size, void* params)
+j_chunked_transformation_object_create(JChunkedTransformationObject* object, JBatch* batch, JTransformationType type, JTransformationMode mode, guint64 chunk_size)
 {
 	J_TRACE_FUNCTION(NULL);
 
