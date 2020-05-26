@@ -595,7 +595,6 @@ j_transformation_object_read_exec(JList* operations, JSemantics* semantics)
 		j_message_append_n(message, object->namespace, namespace_len);
 		j_message_append_n(message, object->name, name_len);
 	}
-
 	/*
 	if (j_semantics_get(semantics, J_SEMANTICS_ATOMICITY) != J_SEMANTICS_ATOMICITY_NONE)
 	{
@@ -1547,6 +1546,7 @@ j_transformation_object_new(gchar const* namespace, gchar const* name)
 	object->metadata = j_kv_new(namespace, name);
 	object->original_size = 0;
 	object->transformed_size = 0;
+	object->transformation = NULL;
 
 	return object;
 }

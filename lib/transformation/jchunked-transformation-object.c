@@ -409,7 +409,7 @@ j_chunked_transformation_object_read_exec(JList* operations, JSemantics* semanti
 			*(op->read.bytes_read) += local_bytes_read[i];
 		}
 
-		g_slice_free1(((length / chunk_size) + 2) * sizeof(guint64), local_bytes_read);
+		g_slice_free1(((op->read.length / chunk_size) + 2) * sizeof(guint64), local_bytes_read);
 	}
 
 	return ret;
