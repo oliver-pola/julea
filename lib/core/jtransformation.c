@@ -205,7 +205,7 @@ j_transformation_apply_lz4(gpointer input, gpointer* output,
 
 static void
 j_transformation_apply_lz4_inverse(gpointer input, gpointer* output,
-				   guint64* length)
+				   guint64* inlength, guint64* outlength)
 {
 	/* #ifdef HAVE_LZ4 */
 	char* out;
@@ -213,17 +213,17 @@ j_transformation_apply_lz4_inverse(gpointer input, gpointer* output,
 	gint64 lz4_decompression_result;
 
 	// TODO Estimatedmaximum size of output as good as possible
-	max_out_len = *length * 2 + 5;
+	max_out_len = *outlength;
 	out = g_slice_alloc(max_out_len);
 
 	// Decompression
-	lz4_decompression_result = LZ4_decompress_safe(input, out, *length, max_out_len);
+	lz4_decompression_result = LZ4_decompress_safe(input, out, *inlength, max_out_len);
 	g_assert(lz4_decompression_result > 0);
 
 	// Copy the used part only
 	*output = g_slice_alloc(lz4_decompression_result);
-	*length = lz4_decompression_result;
-	memcpy(*output, out, *length);
+	*outlength = lz4_decompression_result;
+	memcpy(*output, out, *outlength);
 
 	g_slice_free1(max_out_len, out);
 	/* #endif */
@@ -389,7 +389,7 @@ j_transformation_apply(JTransformation* trafo, gpointer input,
 			break;
 		case J_TRANSFORMATION_TYPE_LZ4:
 			if (inverse)
-				j_transformation_apply_lz4_inverse(input, &buffer, &length);
+				j_transformation_apply_lz4_inverse(input, &buffer, &inlength, outlength);
 			else
 				j_transformation_apply_lz4(input, &buffer, &length);
 			break;
@@ -451,7 +451,7 @@ j_transformation_cleanup(JTransformation* trafo, gpointer data,
 	// but with !partial_access aka. need_whole_object the caller is responsible
 	// to cleanup once the memory block for the wohle object, this method
 	// gets called per operation
-	if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ)
+	if (caller == J_TRANSFORMATION_CALLER_CLIENT_READ || J_TRANSFORMATION_CALLER_CLIENT_WRITE)
 	{
 		if (!trafo->partial_access)
 			g_slice_free1(length, data);

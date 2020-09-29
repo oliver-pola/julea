@@ -619,7 +619,6 @@ j_transformation_object_read_exec(JList* operations, JSemantics* semantics)
 			transformed_length = object->transformed_size;
 			offset = 0;
 			bytes_read = operation->read.bytes_read;
-			transformed_data = malloc(object->transformed_size);
 
 			j_trace_file_begin(object->name, J_TRACE_FILE_READ);
 
@@ -627,18 +626,24 @@ j_transformation_object_read_exec(JList* operations, JSemantics* semantics)
 			{
 				guint64 nbytes = 0;
 				gpointer whole_data_buf = NULL;
-				guint64 data_size = 0;
+				guint64 data_size = object->transformed_size;
+                transformed_data = malloc(object->transformed_size);
 
 				ret = j_backend_object_read(object_backend, object_handle, transformed_data,
 							    transformed_length, offset, &nbytes)
 				      && ret;
-				j_helper_atomic_add(bytes_read, nbytes);
+                
 
+                //TODO wip
 				j_transformation_apply(transformation, transformed_data, transformed_length,
 						       offset, &whole_data_buf, &data_size, &offset,
 						       J_TRANSFORMATION_CALLER_CLIENT_READ);
 				memcpy(operation->read.data, ((char*)whole_data_buf) + operation->read.offset,
 				       operation->read.length);
+
+                // Add the number of read bytes that will be returned to the user
+                j_helper_atomic_add(bytes_read, operation->read.length);
+
 				free(transformed_data);
 				j_transformation_cleanup(transformation, whole_data_buf, data_size, offset,
 							 J_TRANSFORMATION_CALLER_CLIENT_READ);
@@ -711,21 +716,24 @@ j_transformation_object_read_exec(JList* operations, JSemantics* semantics)
 					transformed_data = malloc(object->transformed_size);
 
 					nbytes = j_message_get_8(reply);
-					j_helper_atomic_add(bytes_read, nbytes);
 
 					if (nbytes > 0)
 					{
 						GInputStream* input;
 						gpointer whole_data_buf = NULL;
-						guint64 data_size = 0;
+						guint64 data_size = object->original_size;
 
 						input = g_io_stream_get_input_stream(G_IO_STREAM(object_connection));
 						g_input_stream_read_all(input, transformed_data, nbytes, NULL, NULL, NULL);
 
-						j_transformation_apply(transformation, transformed_data, transformed_length,
-								       offset, &whole_data_buf, &data_size, &offset,
-								       J_TRANSFORMATION_CALLER_CLIENT_READ);
+						j_transformation_apply(transformation, transformed_data,
+                                transformed_length, offset, &whole_data_buf, &data_size,
+                                &offset, J_TRANSFORMATION_CALLER_CLIENT_READ);
 						memcpy(operation->read.data, ((char*)whole_data_buf) + operation->read.offset, operation->read.length);
+
+                        // Add the number of read bytes that will be returned to the user
+                        j_helper_atomic_add(bytes_read, operation->read.length);
+
 						free(transformed_data);
 						j_transformation_cleanup(transformation, whole_data_buf, data_size, offset,
 									 J_TRANSFORMATION_CALLER_CLIENT_READ);
@@ -1093,6 +1101,7 @@ j_transformation_object_write_exec(JList* operations, JSemantics* semantics)
 					       &transformed_data, &data_size, &off, J_TRANSFORMATION_CALLER_CLIENT_WRITE);
 
 			free(whole_data_buf);
+            
 			// Store a pointer to the newly created buffer from jtransformation_apply in the operation
 			// so that it can be freed in _write_free
 			operation->write.data = transformed_data;
@@ -1107,6 +1116,7 @@ j_transformation_object_write_exec(JList* operations, JSemantics* semantics)
 							     off, &nbytes)
 				      && ret;
 				j_helper_atomic_add(bytes_written, nbytes);
+                g_slice_free1(data_size, transformed_data);
 			}
 			else
 			{
@@ -1169,6 +1179,7 @@ j_transformation_object_write_exec(JList* operations, JSemantics* semantics)
 
 			j_connection_pool_push(J_BACKEND_TYPE_OBJECT, object->index, object_connection);
 		}
+
 	}
 	// In place modification of the object data are possible and the only thing that needs to
 	// be done is transforming the data of the write

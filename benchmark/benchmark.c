@@ -210,6 +210,10 @@ main(int argc, char** argv)
 	benchmark_hdf();
 	benchmark_hdf_dai();
 
+    // Transformation client
+	/* benchmark_transformation(); */
+    /* benchmark_chunked_transformation(); */
+
 	g_timer_destroy(j_benchmark_timer);
 	j_semantics_unref(j_benchmark_semantics);
 

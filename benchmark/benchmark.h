@@ -57,4 +57,7 @@ void benchmark_item(void);
 void benchmark_hdf(void);
 void benchmark_hdf_dai(void);
 
+// void benchmark_transformation(void);
+// void benchmark_chunked_transformation(void);
+
 #endif

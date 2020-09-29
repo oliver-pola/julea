@@ -479,10 +479,12 @@ julea_benchmark_srcs = files([
 	'benchmark/message.c',
 	'benchmark/object/distributed-object.c',
 	'benchmark/object/object.c',
+    'benchmark/transformation/transformation-object.c',
+    'benchmark/transformation/chunked-transformation-object.c',
 ])
 
 executable('julea-benchmark', julea_benchmark_srcs,
-	dependencies: common_deps + [julea_dep, julea_client_deps['object'], julea_client_deps['kv'], julea_client_deps['item']] + hdf_deps,
+	dependencies: common_deps + [julea_dep, julea_client_deps['object'], julea_client_deps['kv'], julea_client_deps['item'], julea_client_deps['transformation']] + hdf_deps,
 	include_directories: [julea_incs] + [include_directories('benchmark')],
 )
 

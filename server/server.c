@@ -137,7 +137,6 @@ jd_daemon(void)
 	{
 		return FALSE;
 	}
-
 	if (g_chdir("/") == -1)
 	{
 		return FALSE;
